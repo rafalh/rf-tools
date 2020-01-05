@@ -451,6 +451,7 @@ fn write_v3d_lod_model<W: Write>(wrt: &mut W, mesh: &Mesh, buffers: &Vec<BufferD
 
     wrt.write_u32::<LittleEndian>(0)?; // num_prop_points
 
+    assert!(lod_textures.len() <= 7, "only 7 textures are allowed in submesh");
     wrt.write_u32::<LittleEndian>(lod_textures.len() as u32)?;
     for tex_name in lod_textures {
         write_v3d_lod_texture(wrt, &tex_name, textures)?;
