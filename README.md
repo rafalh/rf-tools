@@ -1,8 +1,14 @@
 RF Tools
 ========
 
-Tools for Red Faction game.
+Tools for Red Faction game:
 
+* v3d-tool - generates V3M files based on GLTF (3D models)
+* vbm-exporter - exports content of VBM files into series of TGA images
+* vf-exporter - exports content of VF file (font) into TGA image
+* vpp-exporter - unpacks packfiles (.vpp files)
+
+All provided tools use command line interface.
 Use them on your own risk.
 
 Build
@@ -23,7 +29,7 @@ Ubuntu (MinGW):
     # Build
     make -j8
 
-v3d-tool uses Rust so it has to be built differently. Check README in v3d-tool directory.
+**v3d-tool** uses Rust - it has to be built differently. Check README in v3d-tool directory.
 
 License
 -------
