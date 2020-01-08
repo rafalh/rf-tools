@@ -24,3 +24,7 @@ Ubuntu (MinGW):
     make -j8
 
 v3d-tool uses Rust so it has to be built differently. Check README in v3d-tool directory.
+
+License
+-------
+The GPL-3 license. See LICENSE.txt.
