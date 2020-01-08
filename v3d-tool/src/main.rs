@@ -4,6 +4,7 @@ use std::io::BufWriter;
 use std::vec::Vec;
 use std::env;
 use std::convert::TryInto;
+use std::f32;
 use byteorder::{LittleEndian, WriteBytesExt};
 use gltf;
 use gltf::mesh::{Mesh, Primitive};
@@ -61,20 +62,65 @@ fn write_f32_slice<W: Write>(wrt: &mut W, slice: &[f32]) -> std::io::Result<()> 
     Ok(())
 }
 
-fn compute_mesh_aabb(mesh: &Mesh) -> gltf::mesh::BoundingBox {
-    let mut aabb = mesh.primitives().next().unwrap().bounding_box();
-    for i in 0..3 {
-        aabb.min[i] -= 1e-6;
-        aabb.max[i] += 1e-6;
+fn get_primitive_vertex_count(prim: &Primitive) -> usize {
+    prim.attributes().find(|p| p.0 == gltf::mesh::Semantic::Positions).map(|a| a.1.count()).unwrap_or(0)
+}
+
+fn count_mesh_vertices(mesh: &Mesh) -> usize {
+    mesh.primitives()
+        .map(|p| get_primitive_vertex_count(&p))
+        .sum()
+}
+
+fn compute_mesh_aabb(mesh: &Mesh, buffers: &Vec<BufferData>, transform: &Matrix4) -> gltf::mesh::BoundingBox {
+    // Note: primitive AABB from gltf cannot be used because vertices are being transformed
+    if count_mesh_vertices(mesh) == 0 {
+        // Mesh has no vertices so return empty AABB
+        return gltf::mesh::BoundingBox {
+            min: [0f32; 3],
+            max: [0f32; 3],
+        };
     }
-    for prim in mesh.primitives().skip(1) {
-        let prim_aabb = prim.bounding_box();
-        for i in 0..3 {
-            aabb.min[i] = aabb.min[i].min(prim_aabb.min[i]) - 1e-6;
-            aabb.max[i] = aabb.max[i].max(prim_aabb.max[i]) + 1e-6;
+    let mut aabb = gltf::mesh::BoundingBox {
+        min: [f32::MAX; 3],
+        max: [f32::MIN; 3],
+    };
+    // Calculate AABB manually using vertex position data
+    for prim in mesh.primitives() {
+        let reader = prim.reader(|buffer| Some(&buffers[buffer.index()]));
+        if let Some(iter) = reader.read_positions() {
+            for pos in iter {
+                let tpos = transform_point(&pos, transform);
+                for i in 0..3 {
+                    aabb.min[i] = aabb.min[i].min(tpos[i]);
+                    aabb.max[i] = aabb.max[i].max(tpos[i]);
+                }
+            }
         }
     }
     aabb
+}
+
+fn get_vector_len(vec: &[f32; 3]) -> f32 {
+    vec.iter().map(|v| v * v).sum::<f32>().sqrt()
+}
+
+fn compute_mesh_bounding_sphere_radius(mesh: &Mesh, buffers: &Vec<BufferData>, transform: &Matrix4, center: &[f32; 3]) -> f32 {
+    let mut radius = 0f32;
+    for prim in mesh.primitives() {
+        let reader = prim.reader(|buffer| Some(&buffers[buffer.index()]));
+        if let Some(iter) = reader.read_positions() {
+            for pos in iter {
+                let tpos = transform_point(&pos, transform);
+                let diff = [tpos[0] - center[0], tpos[1] - center[1], tpos[2] - center[2]];
+                let dist = get_vector_len(&diff);
+                radius = radius.max(dist);
+            }
+        } else {
+            panic!("mesh has no positions");
+        }
+    }
+    radius
 }
 
 fn transform_point(pt: &[f32; 3], t: &Matrix4) -> [f32; 3] {
@@ -95,37 +141,21 @@ fn transform_normal(pt: &[f32; 3], t: &Matrix4) -> [f32; 3] {
         x * t[0][1] + y * t[1][1] + z * t[2][1],
         x * t[0][2] + y * t[1][2] + z * t[2][2],
     );
-    let l = (tx.powi(2) + ty.powi(2) + tz.powi(2)).sqrt();
+    let l = get_vector_len(&[tx, ty, tz]);
     [tx / l, ty / l, tz / l]
 }
 
 fn write_v3d_bounding_sphere<W: Write>(wrt: &mut W, mesh: &Mesh, buffers: &Vec<BufferData>, transform: &Matrix4) -> std::io::Result<()> {
     // non-zero center causes mesh translation
     let center = [0f32; 3];
-
-    let mut radius = 0f32;
-    for prim in mesh.primitives() {
-        let reader = prim.reader(|buffer| Some(&buffers[buffer.index()]));
-        if let Some(iter) = reader.read_positions() {
-            for pos in iter {
-                let pos2 = transform_point(&pos, transform);
-                let dist = ((pos2[0] - center[0]).powi(2) + (pos2[1] - center[1]).powi(2) + (pos2[2] - center[2]).powi(2)).sqrt();
-                radius = radius.max(dist);
-            }
-        } else {
-            panic!("mesh has no positions");
-        }
-    }
-
+    let radius = compute_mesh_bounding_sphere_radius(mesh, buffers, transform, &center);
     write_f32_slice(wrt, &center)?;
     wrt.write_f32::<LittleEndian>(radius)?;
     Ok(())
 }
 
-fn write_v3d_bounding_box<W: Write>(wrt: &mut W, mesh: &Mesh, transform: &Matrix4) -> std::io::Result<()> {
-    let mut aabb = compute_mesh_aabb(mesh);
-    aabb.min = transform_point(&aabb.min, transform);
-    aabb.max = transform_point(&aabb.max, transform);
+fn write_v3d_bounding_box<W: Write>(wrt: &mut W, mesh: &Mesh, buffers: &Vec<BufferData>, transform: &Matrix4) -> std::io::Result<()> {
+    let aabb = compute_mesh_aabb(mesh, buffers, transform);
     write_f32_slice(wrt, &aabb.min)?;
     write_f32_slice(wrt, &aabb.max)?;
     Ok(())
@@ -152,33 +182,21 @@ fn write_v3d_mesh_data_padding(wrt: &mut Vec<u8>) -> std::io::Result<()> {
     Ok(())
 }
 
-fn get_primitive_vertex_count(prim: &Primitive) -> usize {
-    prim.attributes().find(|p| p.0 == gltf::mesh::Semantic::Positions).unwrap().1.count()
-}
-
-fn count_mesh_vertices(mesh: &Mesh) -> usize {
-    let mut result = 0;
-    for prim in mesh.primitives() {
-        result += get_primitive_vertex_count(&prim);
-    }
-    result
-}
-
 fn compute_triangle_normal(p0: &[f32; 3], p1: &[f32; 3], p2: &[f32; 3]) -> [f32; 3] {
     let t0 = [p1[0] - p0[0], p1[1] - p0[1], p1[2] - p0[2]];
     let t1 = [p2[0] - p1[0], p2[1] - p1[1], p2[2] - p1[2]];
 
     let mut normal = [0f32; 3];
     normal[0] = (t0[1] * t1[2]) - (t0[2] * t1[1]);
-	normal[1] = (t0[2] * t1[0]) - (t0[0] * t1[2]);
-	normal[2] = (t0[0] * t1[1]) - (t0[1] * t1[0]);
+    normal[1] = (t0[2] * t1[0]) - (t0[0] * t1[2]);
+    normal[2] = (t0[0] * t1[1]) - (t0[1] * t1[0]);
 
-    let len = (normal[0].powi(2) + normal[1].powi(2) + normal[2].powi(2)).sqrt();
-	normal[0] /= len;
-	normal[1] /= len;
-	normal[2] /= len;
+    let len = get_vector_len(&normal);
+    normal[0] /= len;
+    normal[1] /= len;
+    normal[2] /= len;
 
-	return normal;
+    return normal;
 }
 
 fn compute_triangle_plane(p0: &[f32; 3], p1: &[f32; 3], p2: &[f32; 3]) -> [f32; 4] {
@@ -530,7 +548,7 @@ fn write_v3d_subm_sect<W: Write>(wrt: &mut W, node: &gltf::Node, buffers: &Vec<B
     wrt.write_f32::<LittleEndian>(0.0)?; // lod_distances
 
     write_v3d_bounding_sphere(wrt, &mesh, buffers, &transform)?;
-    write_v3d_bounding_box(wrt, &mesh, &transform)?;
+    write_v3d_bounding_box(wrt, &mesh, buffers, &transform)?;
 
     let textures = get_submesh_textures(node);
 
