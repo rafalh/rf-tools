@@ -22,3 +22,5 @@ Ubuntu (MinGW):
     cmake .. -DCMAKE_TOOLCHAIN_FILE=../cmake/mingw-ubuntu.cmake -DCMAKE_BUILD_TYPE=Release
     # Build
     make -j8
+
+v3d-tool uses Rust so it has to be built differently. Check README in v3d-tool directory.
