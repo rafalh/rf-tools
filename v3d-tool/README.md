@@ -16,6 +16,8 @@ Limitations
 * Maximal number of vertices in a primitive is 5232.
 * Maximal number of indices in a primitive is 9232.
 * Maximal number of textures in a mesh is 7.
+* Maximal length of node name is 23 characters (ASCII).
+* Maximal length of texture file name is 31 characters (ASCII).
 * All nodes with meshes attached are exported as submeshes in V3D.
 * LOD (level of detail) meshes are not supported.
 * Only direct node transformations are applied to the mesh. Node hierarchy is completly ignored by this tool.
