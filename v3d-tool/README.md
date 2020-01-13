@@ -2,7 +2,7 @@
 V3D Tool
 ========
 
-V3D Tool converts GLTF meshes to V3D format (.v3m file extension). Only static meshes are supported right now.
+V3D Tool converts 3D meshes in GLTF format to V3D format (.v3m file extension). Only static meshes are supported right now.
 V3D format is used by Red Faction game.
 
 Usage
@@ -17,7 +17,7 @@ Limitations
 * Maximal number of indices in a primitive is 9232.
 * Maximal number of textures in a mesh is 7.
 * All nodes with meshes attached are exported as submeshes in V3D.
-* LOD (level of detail) meshes is not supported.
+* LOD (level of detail) meshes are not supported.
 * Only direct node transformations are applied to the mesh. Node hierarchy is completly ignored by this tool.
 * Base color texture is used as diffuse map. Other maps are not supported (V3D limitation).
 * For emissive materials only maximal value (channel) of RGB factor is used (e.g. if emissive factor is #FF0000 resulting V3D will have full emission).
