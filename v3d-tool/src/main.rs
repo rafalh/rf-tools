@@ -479,9 +479,10 @@ fn write_v3d_lod_model<W: Write>(wrt: &mut W, mesh: &Mesh, buffers: &Vec<BufferD
 }
 
 fn write_char_array<W: Write>(wrt: &mut W, string: &str, size: usize) -> std::io::Result<()> {
-    assert!(string.len() < size);
-    wrt.write_all(string.as_bytes())?;
-    let padding = vec![0u8; size - string.len()];
+    let bytes = string.as_bytes();
+    assert!(bytes.len() < size);
+    wrt.write_all(bytes)?;
+    let padding = vec![0u8; size - bytes.len()];
     wrt.write_all(&padding)?;
     Ok(())
 }
