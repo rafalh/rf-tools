@@ -25,6 +25,10 @@ const V3D_SUBMESH: u32   = 0x5355424D;
 
 type Matrix4 = [[f32; 4]; 4];
 
+fn create_custom_error<S: Into<String>>(msg: S) -> std::io::Error {
+    std::io::Error::new(std::io::ErrorKind::Other, msg.into())
+}
+
 fn get_submesh_nodes(doc: &gltf::Document) -> impl Iterator<Item = gltf::Node> {
     doc.nodes().filter(|n| n.mesh().is_some())
 }
@@ -240,7 +244,7 @@ fn write_v3d_batch_data(mut wrt: &mut Vec<u8>, prim: &Primitive, buffers: &Vec<B
 
     if let Some(iter) = reader.read_indices() {
         let indices = iter.into_u32().collect::<Vec::<_>>();
-        assert!(indices.len() % 3 == 0);
+        assert!(indices.len() % 3 == 0, "number of indices is not a multiple of three: {}", indices.len());
 
         // write indices
         for tri in indices.chunks(3) {
@@ -408,26 +412,24 @@ fn compute_render_state_for_material(material: &gltf::material::Material) -> u32
 fn write_v3d_batch_info<W: Write>(wrt: &mut W, prim: &Primitive) -> std::io::Result<()> {
     
     if prim.mode() != gltf::mesh::Mode::Triangles {
-        return Err(std::io::Error::new(std::io::ErrorKind::Other, "only triangle list primitives are supported"));
+        return Err(create_custom_error("only triangle list primitives are supported"));
     }
     if prim.indices().is_none() {
-        return Err(std::io::Error::new(std::io::ErrorKind::Other, "not indexed geometry is not supported"));
+        return Err(create_custom_error("not indexed geometry is not supported"));
     }
 
     let index_count = prim.indices().unwrap().count();
-    assert!(index_count % 3 == 0);
+    assert!(index_count % 3 == 0, "number of indices is not a multiple of three: {}", index_count);
     let tri_count = index_count / 3;
     let index_limit = 10000 - 768;
     if index_count > index_limit {
-        eprintln!("Primitive has too many indices: {} (limit {})", index_count, index_limit);
-        panic!();
+        return Err(create_custom_error(format!("primitive has too many indices: {} (limit {})", index_count, index_limit)));
     }
 
     let vertex_count = get_primitive_vertex_count(prim);
     let vertex_limit = 6000 - 768;
     if vertex_count > 6000 {
-        eprintln!("Primitive has too many vertices: {} (limit {})", vertex_count, vertex_limit);
-        panic!();
+        return Err(create_custom_error(format!("primitive has too many vertices: {} (limit {})", vertex_count, vertex_limit)));
     }
 
     wrt.write_u16::<LittleEndian>(vertex_count.try_into().unwrap())?; // vertices_count
@@ -469,7 +471,11 @@ fn write_v3d_lod_model<W: Write>(wrt: &mut W, mesh: &Mesh, buffers: &Vec<BufferD
 
     wrt.write_u32::<LittleEndian>(0)?; // num_prop_points
 
-    assert!(lod_textures.len() <= 7, "only 7 textures are allowed in submesh");
+    const MAX_TEXTURES: usize = 7;
+    if lod_textures.len() > MAX_TEXTURES {
+        return Err(create_custom_error(format!("found {} textures in a submesh but only {} are allowed",
+            lod_textures.len(), MAX_TEXTURES)));
+    }
     wrt.write_u32::<LittleEndian>(lod_textures.len() as u32)?;
     for tex_name in lod_textures {
         write_v3d_lod_texture(wrt, &tex_name, textures)?;
@@ -480,7 +486,9 @@ fn write_v3d_lod_model<W: Write>(wrt: &mut W, mesh: &Mesh, buffers: &Vec<BufferD
 
 fn write_char_array<W: Write>(wrt: &mut W, string: &str, size: usize) -> std::io::Result<()> {
     let bytes = string.as_bytes();
-    assert!(bytes.len() < size);
+    if bytes.len() >= size {
+        return Err(create_custom_error(format!("string value {} is too long (max {})", string, size - 1)));
+    }
     wrt.write_all(bytes)?;
     let padding = vec![0u8; size - bytes.len()];
     wrt.write_all(&padding)?;
@@ -588,27 +596,14 @@ fn write_v3d<W: Write>(wrt: &mut W, document: &gltf::Document, buffers: &Vec<Buf
     Ok(())
 }
 
-fn main() -> std::io::Result<()> {
-
-    println!("GLTF to V3D converter 0.1 by Rafalh");
-
-    let mut args = env::args();
-    let app_name = args.next().unwrap();
-    if env::args().len() != 3 {
-        println!("Usage: {} input_file_name.gltf output_file_name.v3m", app_name);
-        return Ok(());
-    }
-
-    let input_file_name = args.next().unwrap();
-    let output_file_name = args.next().unwrap();
-
-    println!("Importing GLTF file...");
-    let gltf = gltf::Gltf::open(&input_file_name).expect("load GLTF file");
+fn convert_v3d(input_file_name: &str, output_file_name: &str) -> Result<(), Box<dyn std::error::Error>> {
+    println!("Importing GLTF file {}...", input_file_name);
+    let gltf = gltf::Gltf::open(&input_file_name)?;
     let input_path: &std::path::Path = input_file_name.as_ref();
     let gltf::Gltf { document, blob } = gltf;
 
     println!("Importing GLTF buffers...");
-    let buffers = import::import_buffer_data(&document, input_path.parent(), blob).expect("load buffers");
+    let buffers = import::import_buffer_data(&document, input_path.parent(), blob)?;
     
     println!("Converting...");
     let file = File::create(output_file_name)?;
@@ -617,4 +612,24 @@ fn main() -> std::io::Result<()> {
     
     println!("Converted successfully.");
     Ok(())
+}
+
+fn main() {
+
+    println!("GLTF to V3D converter 0.1 by Rafalh");
+
+    let mut args = env::args();
+    let app_name = args.next().unwrap();
+    if env::args().len() != 3 {
+        println!("Usage: {} input_file_name.gltf output_file_name.v3m", app_name);
+        std::process::exit(1);
+    }
+
+    let input_file_name = args.next().unwrap();
+    let output_file_name = args.next().unwrap();
+
+    if let Err(e) = convert_v3d(&input_file_name, &output_file_name) {
+        eprintln!("Error: {}", e);
+        std::process::exit(1);
+    }
 }
