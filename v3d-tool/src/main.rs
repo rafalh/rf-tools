@@ -221,6 +221,19 @@ fn compute_triangle_plane(p0: &Vector3, p1: &Vector3, p2: &Vector3) -> Plane {
     [a, b, c, d]
 }
 
+fn generate_uv(pos: &Vector3, n: &Vector3) -> [f32; 2] {
+    if n[0].abs() >= n[1].abs().max(n[2].abs()) {
+        // X is greatest - left or right side
+        [pos[0] + pos[2] * n[0].signum(), pos[1]]
+    } else if n[1].abs() >= n[0].abs().max(n[2].abs()) {
+        // Y is greatest - top or bottom side
+        [pos[0] * n[1].signum(), pos[2]]
+    } else {
+        // Z is greatest - front or back side
+        [pos[2] + pos[0] * n[2].signum(), pos[1]]
+    }
+}
+
 fn write_v3d_batch_data(mut wrt: &mut Vec<u8>, prim: &Primitive, buffers: &Vec<BufferData>,
     transform: &Matrix3) -> std::io::Result<()> {
     
@@ -228,14 +241,14 @@ fn write_v3d_batch_data(mut wrt: &mut Vec<u8>, prim: &Primitive, buffers: &Vec<B
 
     let positions = reader.read_positions().unwrap().collect::<Vec::<_>>();
     for pos in &positions {
-        //println!("Pos: {} {} {}", pos[0], pos[1], pos[2]);
+        //println!("pos {:?}", pos);
         let tpos = transform_point(&pos, transform);
         write_f32_slice(&mut wrt, &tpos)?;
     }
     write_v3d_mesh_data_padding(wrt)?;
 
     let normals = reader.read_normals().unwrap().collect::<Vec::<_>>();
-    for normal in normals {
+    for normal in &normals {
         let tnormal = transform_normal(&normal, transform);
         write_f32_slice(&mut wrt, &tnormal)?;
     }
@@ -247,9 +260,9 @@ fn write_v3d_batch_data(mut wrt: &mut Vec<u8>, prim: &Primitive, buffers: &Vec<B
         }
     } else {
         // use positions as fallback
-        for pos in &positions {
-            // TODO: improve using normals...
-            let uv = [pos[0] + pos[2], pos[1]];
+        for i in 0..positions.len() {
+            let uv = generate_uv(&positions[i], &normals[i]);
+            //println!("uv {:?}", uv);
             write_f32_slice(&mut wrt, &uv)?;
         }
     }
