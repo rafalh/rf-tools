@@ -23,7 +23,10 @@ const V3D_VERSION: u32 = 0x40000;
 const V3D_END: u32       = 0x00000000; // terminating section
 const V3D_SUBMESH: u32   = 0x5355424D;
 
+type Vector3 = [f32; 3];
+type Plane = [f32; 4];
 type Matrix4 = [[f32; 4]; 4];
+type Matrix3 = [[f32; 3]; 3];
 
 fn create_custom_error<S: Into<String>>(msg: S) -> std::io::Error {
     std::io::Error::new(std::io::ErrorKind::Other, msg.into())
@@ -76,7 +79,7 @@ fn count_mesh_vertices(mesh: &Mesh) -> usize {
         .sum()
 }
 
-fn compute_mesh_aabb(mesh: &Mesh, buffers: &Vec<BufferData>, transform: &Matrix4) -> gltf::mesh::BoundingBox {
+fn compute_mesh_aabb(mesh: &Mesh, buffers: &Vec<BufferData>, transform: &Matrix3) -> gltf::mesh::BoundingBox {
     // Note: primitive AABB from gltf cannot be used because vertices are being transformed
     if count_mesh_vertices(mesh) == 0 {
         // Mesh has no vertices so return empty AABB
@@ -105,18 +108,18 @@ fn compute_mesh_aabb(mesh: &Mesh, buffers: &Vec<BufferData>, transform: &Matrix4
     aabb
 }
 
-fn get_vector_len(vec: &[f32; 3]) -> f32 {
+fn get_vector_len(vec: &Vector3) -> f32 {
     vec.iter().map(|v| v * v).sum::<f32>().sqrt()
 }
 
-fn compute_mesh_bounding_sphere_radius(mesh: &Mesh, buffers: &Vec<BufferData>, transform: &Matrix4, center: &[f32; 3]) -> f32 {
+fn compute_mesh_bounding_sphere_radius(mesh: &Mesh, buffers: &Vec<BufferData>, transform: &Matrix3) -> f32 {
     let mut radius = 0f32;
     for prim in mesh.primitives() {
         let reader = prim.reader(|buffer| Some(&buffers[buffer.index()]));
         if let Some(iter) = reader.read_positions() {
             for pos in iter {
                 let tpos = transform_point(&pos, transform);
-                let diff = [tpos[0] - center[0], tpos[1] - center[1], tpos[2] - center[2]];
+                let diff = [tpos[0], tpos[1], tpos[2]];
                 let dist = get_vector_len(&diff);
                 radius = radius.max(dist);
             }
@@ -127,38 +130,47 @@ fn compute_mesh_bounding_sphere_radius(mesh: &Mesh, buffers: &Vec<BufferData>, t
     radius
 }
 
-fn transform_point(pt: &[f32; 3], t: &Matrix4) -> [f32; 3] {
-    let (x, y, z, w) = (pt[0], pt[1], pt[2], 1f32);
-    let (tx, ty, tz, tw) = (
-        x * t[0][0] + y * t[1][0] + z * t[2][0] + w * t[3][0],
-        x * t[0][1] + y * t[1][1] + z * t[2][1] + w * t[3][1],
-        x * t[0][2] + y * t[1][2] + z * t[2][2] + w * t[3][2],
-        x * t[0][3] + y * t[1][3] + z * t[2][3] + w * t[3][3],
-    );
-    [tx / tw, ty / tw, tz / tw]
-}
-
-fn transform_normal(pt: &[f32; 3], t: &Matrix4) -> [f32; 3] {
+fn transform_vector(pt: &Vector3, t: &Matrix3) -> Vector3 {
     let (x, y, z) = (pt[0], pt[1], pt[2]);
-    let (tx, ty, tz) = (
+    [
         x * t[0][0] + y * t[1][0] + z * t[2][0],
         x * t[0][1] + y * t[1][1] + z * t[2][1],
         x * t[0][2] + y * t[1][2] + z * t[2][2],
-    );
-    let l = get_vector_len(&[tx, ty, tz]);
-    [tx / l, ty / l, tz / l]
+    ]
 }
 
-fn write_v3d_bounding_sphere<W: Write>(wrt: &mut W, mesh: &Mesh, buffers: &Vec<BufferData>, transform: &Matrix4) -> std::io::Result<()> {
-    // non-zero center causes mesh translation
-    let center = [0f32; 3];
-    let radius = compute_mesh_bounding_sphere_radius(mesh, buffers, transform, &center);
-    write_f32_slice(wrt, &center)?;
+fn transform_point(pt: &Vector3, t: &Matrix3) -> Vector3 {
+    // for transforms without translation it is the same as for vector
+    transform_vector(pt, t)
+}
+
+fn transform_normal(n: &Vector3, t: &Matrix3) -> Vector3 {
+    let tn = transform_vector(n, t);
+    // normalize transformed vector
+    let l = get_vector_len(&tn);
+    [tn[0] / l, tn[1] / l, tn[2] / l]
+}
+
+fn extract_translation_from_matrix(transform: &Matrix4) -> (Vector3, Matrix3) {
+    let mut translation = [0f32; 3];
+    translation.copy_from_slice(&transform[3][0..3]);
+    let mut rot_scale_mat = [[0f32; 3]; 3];
+    rot_scale_mat[0].copy_from_slice(&transform[0][0..3]);
+    rot_scale_mat[1].copy_from_slice(&transform[1][0..3]);
+    rot_scale_mat[2].copy_from_slice(&transform[2][0..3]);
+    (translation, rot_scale_mat)
+}
+
+fn write_v3d_bounding_sphere<W: Write>(wrt: &mut W, mesh: &Mesh, buffers: &Vec<BufferData>, origin: &Vector3,
+                                       transform: &Matrix3) -> std::io::Result<()> {
+
+    let radius = compute_mesh_bounding_sphere_radius(mesh, buffers, &transform);
+    write_f32_slice(wrt, origin)?;
     wrt.write_f32::<LittleEndian>(radius)?;
     Ok(())
 }
 
-fn write_v3d_bounding_box<W: Write>(wrt: &mut W, mesh: &Mesh, buffers: &Vec<BufferData>, transform: &Matrix4) -> std::io::Result<()> {
+fn write_v3d_bounding_box<W: Write>(wrt: &mut W, mesh: &Mesh, buffers: &Vec<BufferData>, transform: &Matrix3) -> std::io::Result<()> {
     let aabb = compute_mesh_aabb(mesh, buffers, transform);
     write_f32_slice(wrt, &aabb.min)?;
     write_f32_slice(wrt, &aabb.max)?;
@@ -186,7 +198,7 @@ fn write_v3d_mesh_data_padding(wrt: &mut Vec<u8>) -> std::io::Result<()> {
     Ok(())
 }
 
-fn compute_triangle_normal(p0: &[f32; 3], p1: &[f32; 3], p2: &[f32; 3]) -> [f32; 3] {
+fn compute_triangle_normal(p0: &Vector3, p1: &Vector3, p2: &Vector3) -> Vector3 {
     let t0 = [p1[0] - p0[0], p1[1] - p0[1], p1[2] - p0[2]];
     let t1 = [p2[0] - p1[0], p2[1] - p1[1], p2[2] - p1[2]];
 
@@ -203,14 +215,14 @@ fn compute_triangle_normal(p0: &[f32; 3], p1: &[f32; 3], p2: &[f32; 3]) -> [f32;
     return normal;
 }
 
-fn compute_triangle_plane(p0: &[f32; 3], p1: &[f32; 3], p2: &[f32; 3]) -> [f32; 4] {
+fn compute_triangle_plane(p0: &Vector3, p1: &Vector3, p2: &Vector3) -> Plane {
     let [a, b, c] = compute_triangle_normal(p0, p1, p2);
     let d = -(a * p0[0] + b * p0[1] + c * p0[2]);
     [a, b, c, d]
 }
 
 fn write_v3d_batch_data(mut wrt: &mut Vec<u8>, prim: &Primitive, buffers: &Vec<BufferData>,
-    transform: &Matrix4) -> std::io::Result<()> {
+    transform: &Matrix3) -> std::io::Result<()> {
     
     let reader = prim.reader(|buffer| Some(&buffers[buffer.index()]));
 
@@ -236,6 +248,7 @@ fn write_v3d_batch_data(mut wrt: &mut Vec<u8>, prim: &Primitive, buffers: &Vec<B
     } else {
         // use positions as fallback
         for pos in &positions {
+            // TODO: improve using normals...
             let uv = [pos[0] + pos[2], pos[1]];
             write_f32_slice(&mut wrt, &uv)?;
         }
@@ -294,7 +307,7 @@ fn write_v3d_batch_data(mut wrt: &mut Vec<u8>, prim: &Primitive, buffers: &Vec<B
     Ok(())
 }
 
-fn create_v3d_mesh_data(mesh: &Mesh, buffers: &Vec<BufferData>, transform: &Matrix4, textures: &Vec::<String>) -> std::io::Result<Vec<u8>> {
+fn create_v3d_mesh_data(mesh: &Mesh, buffers: &Vec<BufferData>, transform: &Matrix3, textures: &Vec::<String>) -> std::io::Result<Vec<u8>> {
     let mut wrt = Vec::<u8>::new();
     for prim in mesh.primitives() {
         write_v3d_batch_header(&mut wrt, &prim, textures)?; // batch_info
@@ -452,7 +465,7 @@ fn write_v3d_lod_texture<W: Write>(wrt: &mut W, tex_name: &str, textures: &Vec::
 }
 
 fn write_v3d_lod_model<W: Write>(wrt: &mut W, mesh: &Mesh, buffers: &Vec<BufferData>, textures: &Vec::<String>,
-    transform: &Matrix4) -> std::io::Result<()> {
+    transform: &Matrix3) -> std::io::Result<()> {
 
     wrt.write_u32::<LittleEndian>(0x20)?; // flags, 0x1|0x02 - characters, 0x20 - static meshes, 0x10 only driller01.v3m
     wrt.write_u32::<LittleEndian>(count_mesh_vertices(mesh) as u32)?; // unknown0
@@ -545,7 +558,7 @@ fn write_v3d_subm_sect<W: Write>(wrt: &mut W, node: &gltf::Node, buffers: &Vec<B
     wrt.write_u32::<LittleEndian>(V3D_SUBMESH)?; // section_type
     wrt.write_u32::<LittleEndian>(0)?; // section_size (ccrunch sets it to 0)
 
-    let transform = node.transform().matrix();
+    let node_transform = node.transform().matrix();
     let mesh = node.mesh().unwrap();
 
     let name = node.name().unwrap_or("Default");
@@ -556,12 +569,13 @@ fn write_v3d_subm_sect<W: Write>(wrt: &mut W, node: &gltf::Node, buffers: &Vec<B
     wrt.write_u32::<LittleEndian>(1)?; // num_lods
     wrt.write_f32::<LittleEndian>(0.0)?; // lod_distances
 
-    write_v3d_bounding_sphere(wrt, &mesh, buffers, &transform)?;
-    write_v3d_bounding_box(wrt, &mesh, buffers, &transform)?;
+    let (origin, rot_scale_mat) = extract_translation_from_matrix(&node_transform);
+    write_v3d_bounding_sphere(wrt, &mesh, buffers, &origin, &rot_scale_mat)?;
+    write_v3d_bounding_box(wrt, &mesh, buffers, &rot_scale_mat)?;
 
     let textures = get_submesh_textures(node);
 
-    write_v3d_lod_model(wrt, &mesh, buffers, &textures, &transform)?;
+    write_v3d_lod_model(wrt, &mesh, buffers, &textures, &rot_scale_mat)?;
 
     wrt.write_u32::<LittleEndian>(textures.len() as u32)?; // num_materials
     for tex_name in textures {
