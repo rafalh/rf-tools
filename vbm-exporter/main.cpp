@@ -35,9 +35,9 @@ void write_tga_frame(const std::string &filename, const char *pixel_data, int w,
 
     tga_header tga_hdr;
     init_tga_header(tga_hdr, w, h, hdr.format == VBM_CF_565 ? 24 : 32);
-    output_tga_stream.write((char*)&tga_hdr, sizeof(tga_hdr));
+    output_tga_stream.write(reinterpret_cast<char*>(&tga_hdr), sizeof(tga_hdr));
 
-    vbm_pixel_t *input_pixels = (vbm_pixel_t*)pixel_data;
+    const vbm_pixel_t *input_pixels = reinterpret_cast<const vbm_pixel_t*>(pixel_data);
     for (int i = 0; i < w * h; ++i)
     {
         if (hdr.format == VBM_CF_1555)
@@ -87,7 +87,7 @@ int export_vbm(const char *vbm_filename, const std::string &output_prefix, bool 
     vbm_stream.exceptions(std::ifstream::failbit | std::ifstream::badbit);
 
     vbm_header_t hdr;
-    vbm_stream.read((char*)&hdr, sizeof(hdr));
+    vbm_stream.read(reinterpret_cast<char*>(&hdr), sizeof(hdr));
 
     if (hdr.signature != VBM_SIGNATURE)
     {
