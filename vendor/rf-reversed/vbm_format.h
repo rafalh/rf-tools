@@ -74,24 +74,25 @@ union vbm_pixel_t
     uint16_t    raw_pixel_data; // Pixels are 16 bits wide in "little endian" byte order
     struct
     {
-        uint8_t blue:   5;
-        uint8_t green:  5;
-        uint8_t red:    5;
-        uint8_t nalpha: 1; // in version 1 inverted alpha (0 - opaqua, 1 - transparent), in version 2 field is not inverted anymore
+        uint16_t blue:   5;
+        uint16_t green:  5;
+        uint16_t red:    5;
+        uint16_t nalpha: 1; // in version 1 inverted alpha (0 - opaqua, 1 - transparent), in version 2 field is not inverted anymore
     } cf_1555;
     struct
     {
-        uint8_t blue:  4;
-        uint8_t green: 4;
-        uint8_t red:   4;
-        uint8_t alpha: 4;
+        uint16_t blue:  4;
+        uint16_t green: 4;
+        uint16_t red:   4;
+        uint16_t alpha: 4;
     } cf_4444;
     struct
     {
-        uint8_t blue:  5;
-        uint8_t green: 6;
-        uint8_t red:   5;
+        uint16_t blue:  5;
+        uint16_t green: 6;
+        uint16_t red:   5;
     } cf_565;
 };
+static_assert(sizeof(vbm_pixel_t) == 2);
 
 #pragma pack(pop)
