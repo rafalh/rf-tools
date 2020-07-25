@@ -37,35 +37,36 @@ void write_tga_frame(const std::string &filename, const char *pixel_data, int w,
     init_tga_header(tga_hdr, w, h, hdr.format == VBM_CF_565 ? 24 : 32);
     output_tga_stream.write(reinterpret_cast<char*>(&tga_hdr), sizeof(tga_hdr));
 
-    const vbm_pixel_t *input_pixels = reinterpret_cast<const vbm_pixel_t*>(pixel_data);
+    const uint16_t *input_pixels = reinterpret_cast<const uint16_t*>(pixel_data);
     for (int i = 0; i < w * h; ++i)
     {
+        uint16_t input_pixel = input_pixels[i];
         if (hdr.format == VBM_CF_1555)
         {
             char output_pixel[] = {
-                static_cast<char>(static_cast<int>(input_pixels[i].cf_1555.blue) * 255 / 31),
-                static_cast<char>(static_cast<int>(input_pixels[i].cf_1555.green) * 255 / 31),
-                static_cast<char>(static_cast<int>(input_pixels[i].cf_1555.red) * 255 / 31),
-                static_cast<char>(static_cast<int>(!input_pixels[i].cf_1555.nalpha) * 255),
+                static_cast<char>(static_cast<int>((input_pixel >> 0)  & 0x1F) * 255 / 0x1F), // B
+                static_cast<char>(static_cast<int>((input_pixel >> 5)  & 0x1F) * 255 / 0x1F), // G
+                static_cast<char>(static_cast<int>((input_pixel >> 10) & 0x1F) * 255 / 0x1F), // R
+                static_cast<char>(static_cast<int>(!(input_pixel >> 15)) * 255), // A
             };
             output_tga_stream.write(output_pixel, sizeof(output_pixel));
         }
         else if (hdr.format == VBM_CF_4444)
         {
             char output_pixel[] = {
-                static_cast<char>(static_cast<int>(input_pixels[i].cf_4444.blue) * 255 / 15),
-                static_cast<char>(static_cast<int>(input_pixels[i].cf_4444.green) * 255 / 15),
-                static_cast<char>(static_cast<int>(input_pixels[i].cf_4444.red) * 255 / 15),
-                static_cast<char>(static_cast<int>(input_pixels[i].cf_4444.alpha) * 255 / 15),
+                static_cast<char>(static_cast<int>((input_pixel >> 0)  & 0xF) * 255 / 0xF), // B
+                static_cast<char>(static_cast<int>((input_pixel >> 4)  & 0xF) * 255 / 0xF), // G
+                static_cast<char>(static_cast<int>((input_pixel >> 8)  & 0xF) * 255 / 0xF), // R
+                static_cast<char>(static_cast<int>((input_pixel >> 12) & 0xF) * 255 / 0xF), // A
             };
             output_tga_stream.write(output_pixel, sizeof(output_pixel));
         }
         else if (hdr.format == VBM_CF_565)
         {
             char output_pixel[] = {
-                static_cast<char>(static_cast<int>(input_pixels[i].cf_565.blue) * 255 / 31),
-                static_cast<char>(static_cast<int>(input_pixels[i].cf_565.green) * 255 / 63),
-                static_cast<char>(static_cast<int>(input_pixels[i].cf_565.red) * 255 / 31),
+                static_cast<char>(static_cast<int>((input_pixel >> 0)  & 0xF) * 255 / 0x1F), // B
+                static_cast<char>(static_cast<int>((input_pixel >> 5)  & 0xF) * 255 / 0x3F), // G
+                static_cast<char>(static_cast<int>((input_pixel >> 11) & 0xF) * 255 / 0x1F), // R
             };
             output_tga_stream.write(output_pixel, sizeof(output_pixel));
         }
@@ -140,15 +141,15 @@ int main(int argc, char *argv[])
 
     for (int i = 1; i < argc; ++i)
     {
-        if (!strcmp(argv[i], "-O") && i + 1 < argc)
+        if (!std::strcmp(argv[i], "-O") && i + 1 < argc)
         {
             output_prefix = argv[++i];
             if (!output_prefix.empty() && output_prefix.back() != '/' && output_prefix.back() != '\\')
                 output_prefix += '/';
         }
-        else if (!strcmp(argv[i], "-h"))
+        else if (!std::strcmp(argv[i], "-h"))
             help = true;
-        else if (!strcmp(argv[i], "-v"))
+        else if (!std::strcmp(argv[i], "-v"))
             verbose = true;
         else
         {
