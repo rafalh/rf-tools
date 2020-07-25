@@ -11,7 +11,7 @@ byteorder = "1"
 base64 = "0.10"
 
 [dependencies.gltf]
-version = "0.14"
+version = "0.15"
 features = ["extras", "names", "utils"]
 default-features = false
 
