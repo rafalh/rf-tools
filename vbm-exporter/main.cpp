@@ -1,6 +1,7 @@
 #include <fstream>
 #include <iostream>
 #include <sstream>
+#include <string_view>
 #include <memory>
 #include <iomanip>
 #include <cstdint>
@@ -141,15 +142,16 @@ int main(int argc, char *argv[])
 
     for (int i = 1; i < argc; ++i)
     {
-        if (!std::strcmp(argv[i], "-O") && i + 1 < argc)
+        std::string_view arg = argv[i];
+        if (arg == "-O" && i + 1 < argc)
         {
             output_prefix = argv[++i];
             if (!output_prefix.empty() && output_prefix.back() != '/' && output_prefix.back() != '\\')
                 output_prefix += '/';
         }
-        else if (!std::strcmp(argv[i], "-h"))
+        else if (arg == "-h")
             help = true;
-        else if (!std::strcmp(argv[i], "-v"))
+        else if (arg == "-v")
             verbose = true;
         else
         {
