@@ -24,6 +24,7 @@ Limitations
 * Base color texture is used as diffuse map. Other maps are not supported (V3D limitation).
 * For emissive materials only maximal value (channel) of RGB factor is used (e.g. if emissive factor is #FF0000 resulting V3D will have full emission).
 * Double sided material property is supported. If not enabled back-face culling is used for V3D rendering.
+* Child nodes without mesh attached are exported as prop points (e.g. for glares)
 
 Building
 --------
