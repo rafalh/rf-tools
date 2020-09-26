@@ -477,7 +477,7 @@ fn write_v3d_lod_texture<W: Write>(wrt: &mut W, tex_name: &str, textures: &Vec::
     Ok(())
 }
 
-fn write_v3d_lod_model<W: Write>(wrt: &mut W, mesh: &Mesh, buffers: &Vec<BufferData>, textures: &Vec::<String>,
+fn write_v3d_lod_mesh<W: Write>(wrt: &mut W, mesh: &Mesh, buffers: &Vec<BufferData>, textures: &Vec::<String>,
     transform: &Matrix3) -> std::io::Result<()> {
 
     wrt.write_u32::<LittleEndian>(0x20)?; // flags, 0x1|0x02 - characters, 0x20 - static meshes, 0x10 only driller01.v3m
@@ -588,7 +588,7 @@ fn write_v3d_subm_sect<W: Write>(wrt: &mut W, node: &gltf::Node, buffers: &Vec<B
 
     let textures = get_submesh_textures(node);
 
-    write_v3d_lod_model(wrt, &mesh, buffers, &textures, &rot_scale_mat)?;
+    write_v3d_lod_mesh(wrt, &mesh, buffers, &textures, &rot_scale_mat)?;
 
     wrt.write_u32::<LittleEndian>(textures.len() as u32)?; // num_materials
     for tex_name in textures {
