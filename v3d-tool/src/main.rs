@@ -234,7 +234,7 @@ fn generate_uv(pos: &Vector3, n: &Vector3) -> [f32; 2] {
     }
 }
 
-fn write_v3d_batch_data(mut wrt: &mut Vec<u8>, prim: &Primitive, buffers: &Vec<BufferData>,
+fn write_v3d_batch_data(wrt: &mut Vec<u8>, prim: &Primitive, buffers: &Vec<BufferData>,
     transform: &Matrix3) -> std::io::Result<()> {
     
     let reader = prim.reader(|buffer| Some(&buffers[buffer.index()]));
@@ -243,27 +243,27 @@ fn write_v3d_batch_data(mut wrt: &mut Vec<u8>, prim: &Primitive, buffers: &Vec<B
     for pos in &positions {
         //println!("pos {:?}", pos);
         let tpos = transform_point(&pos, transform);
-        write_f32_slice(&mut wrt, &tpos)?;
+        write_f32_slice(wrt, &tpos)?;
     }
     write_v3d_mesh_data_padding(wrt)?;
 
     let normals = reader.read_normals().unwrap().collect::<Vec::<_>>();
     for normal in &normals {
         let tnormal = transform_normal(&normal, transform);
-        write_f32_slice(&mut wrt, &tnormal)?;
+        write_f32_slice(wrt, &tnormal)?;
     }
     write_v3d_mesh_data_padding(wrt)?;
 
     if let Some(iter) = reader.read_tex_coords(0) {
         for uv in iter.into_f32() {
-            write_f32_slice(&mut wrt, &uv)?;
+            write_f32_slice(wrt, &uv)?;
         }
     } else {
         // use positions as fallback
         for i in 0..positions.len() {
             let uv = generate_uv(&positions[i], &normals[i]);
             //println!("uv {:?}", uv);
-            write_f32_slice(&mut wrt, &uv)?;
+            write_f32_slice(wrt, &uv)?;
         }
     }
     write_v3d_mesh_data_padding(wrt)?;
@@ -290,7 +290,7 @@ fn write_v3d_batch_data(mut wrt: &mut Vec<u8>, prim: &Primitive, buffers: &Vec<B
             let p1 = transform_point(&positions[tri[1] as usize], &transform);
             let p2 = transform_point(&positions[tri[2] as usize], &transform);
             let plane = compute_triangle_plane(&p0, &p1, &p2);
-            write_f32_slice(&mut wrt, &plane)?;
+            write_f32_slice(wrt, &plane)?;
         }
         write_v3d_mesh_data_padding(wrt)?;
 
@@ -320,7 +320,23 @@ fn write_v3d_batch_data(mut wrt: &mut Vec<u8>, prim: &Primitive, buffers: &Vec<B
     Ok(())
 }
 
-fn create_v3d_mesh_data(mesh: &Mesh, buffers: &Vec<BufferData>, transform: &Matrix3, textures: &Vec::<String>) -> std::io::Result<Vec<u8>> {
+fn is_valid_prop_point(node: &gltf::Node) -> bool {
+    node.mesh().is_none() && node.name().is_some()
+}
+
+fn write_v3d_prop_point(wrt: &mut Vec<u8>, node: &gltf::Node,
+    transform: &Matrix3) -> std::io::Result<()>
+{
+    write_char_array(wrt, node.name().expect("prop point name"), 0x44)?;
+    let (translation, rotation, _scale) = node.transform().decomposed();
+    write_f32_slice(wrt, &rotation)?;
+    let transformed_transform = transform_point(&translation, &transform);
+    write_f32_slice(wrt, &transformed_transform)?;
+    wrt.write_i32::<LittleEndian>(-1)?;
+    Ok(())
+}
+
+fn create_v3d_mesh_data<'a>(mesh: &Mesh, buffers: &Vec<BufferData>, transform: &Matrix3, textures: &Vec::<String>, prop_points: impl Iterator<Item = &'a gltf::Node<'a>>) -> std::io::Result<Vec<u8>> {
     let mut wrt = Vec::<u8>::new();
     for prim in mesh.primitives() {
         write_v3d_batch_header(&mut wrt, &prim, textures)?; // batch_info
@@ -332,7 +348,9 @@ fn create_v3d_mesh_data(mesh: &Mesh, buffers: &Vec<BufferData>, transform: &Matr
     }
     // padding to 0x10 (to data section begin)
     write_v3d_mesh_data_padding(&mut wrt)?;
-    // no prop points
+    for prop in prop_points {
+        write_v3d_prop_point(&mut wrt, &prop, transform)?; // batch_info
+    }
     Ok(wrt)
 }
 
@@ -477,16 +495,19 @@ fn write_v3d_lod_texture<W: Write>(wrt: &mut W, tex_name: &str, textures: &Vec::
     Ok(())
 }
 
-fn write_v3d_lod_model<W: Write>(wrt: &mut W, mesh: &Mesh, buffers: &Vec<BufferData>, textures: &Vec::<String>,
+fn write_v3d_lod_mesh<W: Write>(wrt: &mut W, node: &gltf::Node, buffers: &Vec<BufferData>, textures: &Vec::<String>,
     transform: &Matrix3) -> std::io::Result<()> {
 
+    let mesh = node.mesh().unwrap();
+
     wrt.write_u32::<LittleEndian>(0x20)?; // flags, 0x1|0x02 - characters, 0x20 - static meshes, 0x10 only driller01.v3m
-    wrt.write_u32::<LittleEndian>(count_mesh_vertices(mesh) as u32)?; // unknown0
+    wrt.write_u32::<LittleEndian>(count_mesh_vertices(&mesh) as u32)?; // unknown0
     wrt.write_u16::<LittleEndian>(mesh.primitives().len() as u16)?; // num_batches
 
     let lod_textures = mesh.primitives().map(|prim| get_material_base_color_texture_name(&prim.material())).collect::<Vec<_>>();
 
-    let batch_data = create_v3d_mesh_data(mesh, buffers, transform, &lod_textures)?;
+    let prop_point_nodes: Vec<_> = node.children().filter(is_valid_prop_point).collect();
+    let batch_data = create_v3d_mesh_data(&mesh, buffers, transform, &lod_textures, prop_point_nodes.iter())?;
     wrt.write_u32::<LittleEndian>(batch_data.len() as u32)?; // data_size
     wrt.write_all(&batch_data)?;
 
@@ -495,7 +516,7 @@ fn write_v3d_lod_model<W: Write>(wrt: &mut W, mesh: &Mesh, buffers: &Vec<BufferD
         write_v3d_batch_info(wrt, &prim)?; // batch_info
     }
 
-    wrt.write_u32::<LittleEndian>(0)?; // num_prop_points
+    wrt.write_u32::<LittleEndian>(prop_point_nodes.len() as u32)?; // num_prop_points
 
     const MAX_TEXTURES: usize = 7;
     if lod_textures.len() > MAX_TEXTURES {
@@ -588,7 +609,7 @@ fn write_v3d_subm_sect<W: Write>(wrt: &mut W, node: &gltf::Node, buffers: &Vec<B
 
     let textures = get_submesh_textures(node);
 
-    write_v3d_lod_model(wrt, &mesh, buffers, &textures, &rot_scale_mat)?;
+    write_v3d_lod_mesh(wrt, &node, buffers, &textures, &rot_scale_mat)?;
 
     wrt.write_u32::<LittleEndian>(textures.len() as u32)?; // num_materials
     for tex_name in textures {
