@@ -464,16 +464,20 @@ fn write_v3d_batch_info<W: Write>(wrt: &mut W, prim: &Primitive) -> std::io::Res
 
     let index_count = prim.indices().unwrap().count();
     assert!(index_count % 3 == 0, "number of indices is not a multiple of three: {}", index_count);
-    let tri_count = index_count / 3;
-    let index_limit = 10000 - 768;
-    if index_count > index_limit {
-        return Err(create_custom_error(format!("primitive has too many indices: {} (limit {})", index_count, index_limit)));
-    }
 
+    let tri_count = index_count / 3;
     let vertex_count = get_primitive_vertex_count(prim);
-    let vertex_limit = 6000 - 768;
-    if vertex_count > 6000 {
-        return Err(create_custom_error(format!("primitive has too many vertices: {} (limit {})", vertex_count, vertex_limit)));
+
+    if env::var("IGNORE_GEOMETRY_LIMITS").is_err() {
+        let index_limit = 10000 - 768;
+        if index_count > index_limit {
+            return Err(create_custom_error(format!("primitive has too many indices: {} (limit {})", index_count, index_limit)));
+        }
+
+        let vertex_limit = 6000 - 768;
+        if vertex_count > 6000 {
+            return Err(create_custom_error(format!("primitive has too many vertices: {} (limit {})", vertex_count, vertex_limit)));
+        }
     }
 
     wrt.write_u16::<LittleEndian>(vertex_count.try_into().unwrap())?; // vertices_count

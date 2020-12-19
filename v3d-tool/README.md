@@ -14,7 +14,7 @@ Limitations
 -----------
 
 * Maximal number of vertices in a primitive is 5232.
-* Maximal number of indices in a primitive is 9232.
+* Maximal number of indices in a primitive is 9231 (3077 triangles).
 * Maximal number of textures in a mesh is 7.
 * Maximal length of node name is 23 characters (ASCII).
 * Maximal length of texture file name is 31 characters (ASCII).
