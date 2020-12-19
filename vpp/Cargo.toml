@@ -1,0 +1,17 @@
+[package]
+name = "vpp"
+version = "0.1.0"
+authors = ["Rafał Harabień <rafalh92@outlook.com>"]
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+
+[profile.dev]
+panic = "abort"
+
+[profile.release]
+panic = "abort"
+opt-level = 'z'  # Optimize for size.
+lto = true

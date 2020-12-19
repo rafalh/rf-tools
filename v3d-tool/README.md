@@ -25,18 +25,3 @@ Limitations
 * For emissive materials only maximal value (channel) of RGB factor is used (e.g. if emissive factor is #FF0000 resulting V3D will have full emission).
 * Double sided material property is supported. If not enabled back-face culling is used for V3D rendering.
 * Child nodes without mesh attached are exported as prop points (e.g. for glares)
-
-Building
---------
-
-You need Rust installed to build this project.
-
-To build this project run:
-
-    cargo build
-
-To cross-compile for Windows (e.g. from Linux):
-
-    cargo build --release --target=i686-pc-windows-gnu
-
-Note: you may need additional packages (e.g. mingw-w64 in Ubuntu).
