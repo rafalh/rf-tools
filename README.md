@@ -33,19 +33,19 @@ Ubuntu (MinGW):
     # Build
     make -j8
 
-**v3d-tool**, **makevbm**, **vpp** are Rust applications - they have to be built separately.
+Tools written in Rust use Cargo for building.
 
 You need Rust installed.
 
-To build a single project run following command in project directory:
+Build from repository root directory:
 
-    cargo build
+    cargo build --release
 
 To cross-compile for Windows (e.g. from Linux):
 
     cargo build --release --target=i686-pc-windows-gnu
 
-Note: you may need additional packages (e.g. mingw-w64 in Ubuntu).
+Note: you may need additional packages (e.g. `mingw-w64` in Ubuntu).
 
 
 License

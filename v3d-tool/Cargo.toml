@@ -14,10 +14,3 @@ base64 = "0.10"
 version = "0.15"
 features = ["extras", "names", "utils"]
 default-features = false
-
-[profile.dev]
-panic = "abort"
-
-[profile.release]
-panic = "abort"
-lto = true

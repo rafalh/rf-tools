@@ -1,0 +1,16 @@
+[workspace]
+
+members = [
+    "v3d-tool",
+    "vpp",
+    "makevbm",
+]
+
+[profile.dev]
+panic = "abort"
+
+[profile.release]
+# Needed for cross-compilation from Linux to Windows
+# See https://github.com/rust-lang/rust/issues/12859 and https://github.com/rust-lang/rust/issues/79609
+panic = "abort"
+lto = true

@@ -1,2 +1,3 @@
-build*
-_unversioned
+/build*
+/target
+/_unversioned
