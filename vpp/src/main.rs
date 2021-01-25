@@ -203,8 +203,6 @@ fn extract_vpp(packfile_path: &str, output_dir: Option<&str>) -> Result<()> {
         let mut bytes_left = entry.size as usize;
         for _ in 0..num_blocks {
             file.read_exact(&mut block)?;
-
-            println!("aaaa");
             let bytes_to_write = cmp::min( VPP_BLOCK_SIZE, bytes_left);
             output_file.write_all(&block[..bytes_to_write])?;
             bytes_left -= bytes_to_write;
