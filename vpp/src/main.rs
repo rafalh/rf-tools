@@ -268,7 +268,6 @@ fn list_vpp_content(packfile_path: &str) -> Result<()> {
 }
 
 fn help() {
-    println!("VPP tool v0.1 created by Rafalh");
     println!("Usage:");
     println!("  vpp -c vpp_path files...    - create packfile");
     println!("  vpp -x vpp_path             - extract packfile");
@@ -277,12 +276,17 @@ fn help() {
     println!("  --dep-info  - write vpp dependencies into .d file using Makefile syntax");
 }
 
+fn version() {
+    println!("VPP tool v0.1 created by Rafalh");
+}
+
 enum Mode
 {
     Create,
     Extract,
     List,
     Help,
+    Version,
 }
 
 struct ParsedArgs
@@ -305,6 +309,7 @@ fn parse_args() -> ParsedArgs {
             "-x" => mode = Mode::Extract,
             "-l" => mode = Mode::List,
             "-h" => mode = Mode::Help,
+            "-v" => mode = Mode::Version,
             "--dep-info" => dep_info = true,
             "--verbose" => verbose = true,
             _ => positional_args.push(arg),
@@ -339,6 +344,7 @@ fn main() -> Result<()> {
             extract_vpp(vpp_path, None, args.verbose)?;
         },
         Mode::Help => help(),
+        Mode::Version => version(),
     };
     Ok(())
 }
