@@ -6,6 +6,9 @@ use std::cmp;
 use std::convert::TryInto;
 use std::path::Path;
 
+#[macro_use]
+extern crate log;
+
 const VPP_BLOCK_SIZE: usize = 0x800;
 const VPP_VERSION: u32 = 1;
 const VPP_SIGNATURE: u32 = 0x51890ACE;
@@ -90,6 +93,7 @@ impl VppEntry {
 }
 
 fn process_file_list(file_list: Vec<String>) -> Result<Vec<String>> {
+    debug!("Processing file list");
     let mut result = Vec::new();
     for filename in file_list {
         if filename.starts_with("@") {
@@ -114,6 +118,7 @@ fn transform_filename_for_dep_file(filename: &str) -> Result<String> {
 }
 
 fn create_dep_file(packfile_path: &str, file_list: &Vec<String>) -> Result<()> {
+    debug!("Creating dep file");
     let mut file = File::create(packfile_path.to_string() + ".d")?;
     write!(file, "{}:", transform_filename_for_dep_file(packfile_path)?)?;
     for fname in file_list {
@@ -122,11 +127,11 @@ fn create_dep_file(packfile_path: &str, file_list: &Vec<String>) -> Result<()> {
     Ok(())
 }
 
-fn create_vpp(packfile_path: &str, file_list: &Vec<String>) -> Result<()> {
-    println!("Opening output file {}", packfile_path);
+fn create_vpp(packfile_path: &str, file_list: &Vec<String>, verbose: bool) -> Result<()> {
+    debug!("Opening output file {}", packfile_path);
     let mut file = File::create(packfile_path)?;
 
-    println!("Writing file header");
+    debug!("Writing file header");
     let hdr = VppHeader {
         signature: VPP_SIGNATURE,
         version: VPP_VERSION,
@@ -137,7 +142,7 @@ fn create_vpp(packfile_path: &str, file_list: &Vec<String>) -> Result<()> {
     hdr.write(&mut block.as_mut())?;
     file.write_all(&block)?;
 
-    println!("Writing entries");
+    debug!("Writing entries");
     let mut block_wrt: &mut [u8] = &mut block;
     for fname in file_list {
         if block_wrt.is_empty() {
@@ -157,13 +162,16 @@ fn create_vpp(packfile_path: &str, file_list: &Vec<String>) -> Result<()> {
         file.write_all(&block)?;
     }
 
-    println!("Writing data");
+    debug!("Writing data");
     for fname in file_list {
+        if verbose {
+            println!("Packing {}", fname);
+        }
         let mut input_file = File::open(fname)?;
         block_wrt = &mut block;
         loop {
             if block_wrt.is_empty() {
-                //println!("Writing data block");
+                debug!("Writing data block");
                 file.write_all(&block)?;
                 block_wrt = &mut block;
             }
@@ -174,7 +182,7 @@ fn create_vpp(packfile_path: &str, file_list: &Vec<String>) -> Result<()> {
             block_wrt = &mut block_wrt[num_read_bytes..];
         }
         if block_wrt.len() < block.len() {
-            //println!("Writing data block");
+            debug!("Writing data block");
             file.write_all(&block)?;
         }
     }
@@ -182,16 +190,16 @@ fn create_vpp(packfile_path: &str, file_list: &Vec<String>) -> Result<()> {
     Ok(())
 }
 
-fn extract_vpp(packfile_path: &str, output_dir: Option<&str>) -> Result<()> {
-    println!("Opening input packfile {}", packfile_path);
+fn extract_vpp(packfile_path: &str, output_dir: Option<&str>, verbose: bool) -> Result<()> {
+    debug!("Opening input packfile {}", packfile_path);
     let mut file = File::open(packfile_path)?;
 
-    println!("Reading file header");
+    debug!("Reading file header");
     let mut hdr_block = [0u8; VPP_BLOCK_SIZE];
     file.read_exact(&mut hdr_block)?;
     let hdr = VppHeader::read(&mut hdr_block.as_ref())?;
 
-    println!("Reading entries");
+    debug!("Reading entries");
     let mut block = [0u8; VPP_BLOCK_SIZE];
     let mut block_rdr: &[u8] = &[];
     let mut entries = Vec::<VppEntry>::new();
@@ -205,14 +213,16 @@ fn extract_vpp(packfile_path: &str, output_dir: Option<&str>) -> Result<()> {
         entries.push(entry);
     }
 
-    println!("Reading data");
+    debug!("Reading data");
     for entry in entries {
         let num_blocks = (entry.size as usize + VPP_BLOCK_SIZE - 1) / VPP_BLOCK_SIZE;
         let name_str = String::from_utf8_lossy(&entry.name);
         let output_path = output_dir
             .map(|dir| dir.to_owned() + "/" + &name_str)
             .unwrap_or_else(|| name_str.to_string());
-        println!("Extracting {}", output_path);
+        if verbose {
+            println!("Extracting {}", output_path);
+        }
         let mut output_file = File::create(output_path)?;
         let mut bytes_left = entry.size as usize;
         for _ in 0..num_blocks {
@@ -274,16 +284,16 @@ struct ParsedArgs
 {
     mode: Mode,
     positional_args: Vec<String>,
-    //verbose: bool,
     dep_info: bool,
-
+    verbose: bool,
 }
 
 fn parse_args() -> ParsedArgs {
     let mut mode = Mode::Help;
     let mut positional_args = Vec::<String>::new();
-    //let mut verbose = false;
     let mut dep_info = false;
+    let mut verbose = false;
+
     for arg in env::args().skip(1) {
         match arg.as_str() {
             "-c" => mode = Mode::Create,
@@ -291,7 +301,7 @@ fn parse_args() -> ParsedArgs {
             "-l" => mode = Mode::List,
             "-h" => mode = Mode::Help,
             "--dep-info" => dep_info = true,
-            //"-v" => verbose = true,
+            "--verbose" => verbose = true,
             _ => positional_args.push(arg),
         }
     }
@@ -299,8 +309,8 @@ fn parse_args() -> ParsedArgs {
     ParsedArgs { 
         mode, 
         positional_args, 
-        //verbose,
         dep_info,
+        verbose,
     }
 }
 
@@ -310,7 +320,7 @@ fn main() -> Result<()> {
         Mode::Create => {
             let vpp_path = args.positional_args.first().unwrap();
             let file_list = process_file_list(args.positional_args.iter().cloned().skip(1).collect::<Vec<_>>())?;
-            create_vpp(vpp_path, &file_list)?;
+            create_vpp(vpp_path, &file_list, args.verbose)?;
             if args.dep_info {
                 create_dep_file(vpp_path, &file_list)?;
             }
@@ -321,7 +331,7 @@ fn main() -> Result<()> {
         },
         Mode::Extract => {
             let vpp_path = args.positional_args.first().unwrap();
-            extract_vpp(vpp_path, None)?;
+            extract_vpp(vpp_path, None, args.verbose)?;
         },
         Mode::Help => help(),
     };
