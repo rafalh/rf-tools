@@ -1,7 +1,7 @@
 use std::env;
 use std::fs::File;
 use std::u32;
-use std::io::{Read, Write, BufReader, BufRead, Error, ErrorKind, Result};
+use std::io::{Read, Write, Seek, SeekFrom, BufReader, BufRead, BufWriter, Error, ErrorKind, Result};
 use std::cmp;
 use std::convert::TryInto;
 use std::path::Path;
@@ -119,7 +119,7 @@ fn transform_filename_for_dep_file(filename: &str) -> Result<String> {
 
 fn create_dep_file(packfile_path: &str, file_list: &Vec<String>) -> Result<()> {
     debug!("Creating dep file");
-    let mut file = File::create(packfile_path.to_string() + ".d")?;
+    let mut file = BufWriter::new(File::create(packfile_path.to_string() + ".d")?);
     write!(file, "{}:", transform_filename_for_dep_file(packfile_path)?)?;
     for fname in file_list {
         write!(file, " {}", transform_filename_for_dep_file(fname)?)?;
@@ -132,7 +132,7 @@ fn create_vpp(packfile_path: &str, file_list: &Vec<String>, verbose: bool) -> Re
     let mut file = File::create(packfile_path)?;
 
     debug!("Writing file header");
-    let hdr = VppHeader {
+    let mut hdr = VppHeader {
         signature: VPP_SIGNATURE,
         version: VPP_VERSION,
         num_files: file_list.len() as u32,
@@ -186,6 +186,11 @@ fn create_vpp(packfile_path: &str, file_list: &Vec<String>, verbose: bool) -> Re
             file.write_all(&block)?;
         }
     }
+
+    let pos = file.seek(SeekFrom::Current(0))?;
+    file.seek(SeekFrom::Start(0))?;
+    hdr.size = pos as u32;
+    hdr.write(&mut file)?;
 
     Ok(())
 }
