@@ -108,7 +108,21 @@ fn process_file_list(file_list: Vec<String>) -> Result<Vec<String>> {
     Ok(result)
 }
 
-fn create_vpp(packfile_path: &str, file_list: Vec<String>) -> Result<()> {
+fn transform_filename_for_dep_file(filename: &str) -> Result<String> {
+    let abs_path = std::fs::canonicalize(filename)?;
+    Ok(abs_path.display().to_string().replace(" ", "\\ "))
+}
+
+fn create_dep_file(packfile_path: &str, file_list: &Vec<String>) -> Result<()> {
+    let mut file = File::create(packfile_path.to_string() + ".d")?;
+    write!(file, "{}:", transform_filename_for_dep_file(packfile_path)?)?;
+    for fname in file_list {
+        write!(file, " {}", transform_filename_for_dep_file(fname)?)?;
+    }
+    Ok(())
+}
+
+fn create_vpp(packfile_path: &str, file_list: &Vec<String>) -> Result<()> {
     println!("Opening output file {}", packfile_path);
     let mut file = File::create(packfile_path)?;
 
@@ -125,7 +139,7 @@ fn create_vpp(packfile_path: &str, file_list: Vec<String>) -> Result<()> {
 
     println!("Writing entries");
     let mut block_wrt: &mut [u8] = &mut block;
-    for fname in &file_list {
+    for fname in file_list {
         if block_wrt.is_empty() {
             file.write_all(&block)?;
             block_wrt = &mut block;
@@ -144,7 +158,7 @@ fn create_vpp(packfile_path: &str, file_list: Vec<String>) -> Result<()> {
     }
 
     println!("Writing data");
-    for fname in &file_list {
+    for fname in file_list {
         let mut input_file = File::open(fname)?;
         block_wrt = &mut block;
         loop {
@@ -239,10 +253,13 @@ fn list_vpp_content(packfile_path: &str) -> Result<()> {
 }
 
 fn help() {
+    println!("VPP tool v0.1 created by Rafalh");
     println!("Usage:");
     println!("  vpp -c vpp_path files...    - create packfile");
     println!("  vpp -x vpp_path             - extract packfile");
     println!("  vpp -l vpp_path             - list packfile content");
+    println!("Additional options:");
+    println!("  --dep-info  - write vpp dependencies into .d file using Makefile syntax");
 }
 
 enum Mode
@@ -258,18 +275,22 @@ struct ParsedArgs
     mode: Mode,
     positional_args: Vec<String>,
     //verbose: bool,
+    dep_info: bool,
+
 }
 
 fn parse_args() -> ParsedArgs {
     let mut mode = Mode::Help;
     let mut positional_args = Vec::<String>::new();
     //let mut verbose = false;
+    let mut dep_info = false;
     for arg in env::args().skip(1) {
         match arg.as_str() {
             "-c" => mode = Mode::Create,
             "-x" => mode = Mode::Extract,
             "-l" => mode = Mode::List,
             "-h" => mode = Mode::Help,
+            "--dep-info" => dep_info = true,
             //"-v" => verbose = true,
             _ => positional_args.push(arg),
         }
@@ -279,6 +300,7 @@ fn parse_args() -> ParsedArgs {
         mode, 
         positional_args, 
         //verbose,
+        dep_info,
     }
 }
 
@@ -288,7 +310,10 @@ fn main() -> Result<()> {
         Mode::Create => {
             let vpp_path = args.positional_args.first().unwrap();
             let file_list = process_file_list(args.positional_args.iter().cloned().skip(1).collect::<Vec<_>>())?;
-            create_vpp(vpp_path, file_list)?;
+            create_vpp(vpp_path, &file_list)?;
+            if args.dep_info {
+                create_dep_file(vpp_path, &file_list)?;
+            }
         },
         Mode::List => {
             let vpp_path = args.positional_args.first().unwrap();
