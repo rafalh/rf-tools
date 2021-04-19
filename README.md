@@ -9,6 +9,7 @@ Tools for Red Faction game:
 * vpp-exporter - unpacks packfiles (files with `.vpp` extension)
 * makevbm - creates VBM files from a series of images
 * vpp - creates or extracts packfiles (files with `.vpp` extension)
+* vsound - converts VSE/VMU files (PlayStation 2) to WAV
 
 All provided tools use command line interface.
 Use them on your own risk.

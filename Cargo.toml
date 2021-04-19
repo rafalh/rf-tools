@@ -4,6 +4,7 @@ members = [
     "v3d-tool",
     "vpp",
     "makevbm",
+    "vsound",
 ]
 
 [profile.dev]
