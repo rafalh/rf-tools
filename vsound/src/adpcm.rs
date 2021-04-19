@@ -1,3 +1,4 @@
+// Algorithm based PCSX2 emulator code:
 // https://github.com/PCSX2/pcsx2/blob/ef6b65afb40ebd855b0cc113ea04b5afe2bf9607/pcsx2/SPU2/Mixer.cpp
 
 const TBL_XA_FACTOR: [[i32; 2]; 5] = [
