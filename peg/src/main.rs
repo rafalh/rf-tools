@@ -158,11 +158,17 @@ struct PalEntry {
     a: u8,
 }
 
-fn extract_peg_mipmap<R: Read>(rdr: &mut R, e: &PegFileEntry, level: u8, pal: &[PalEntry; 256], output_dir: &Option<String>) -> Result<()> {
+fn extract_peg_mipmap<R: Read>(rdr: &mut R, e: &PegFileEntry, level: u8, frame: u8, pal: &[PalEntry; 256], output_dir: &Option<String>) -> Result<()> {
     let w = e.width >> level;
     let h = e.height >> level;
     println!("level {} w {} h {}", level, w, h);
-    let output_filename = format!("{}/{}_mip{}.tga", output_dir.clone().unwrap_or(".".to_string()), e.filename, level);
+    let output_filename = format!(
+        "{}/{}_{:04}_mip{}.tga",
+        output_dir.clone().unwrap_or(".".to_string()),
+        e.filename.trim_end_matches(".tga"),
+        frame,
+        level
+    );
     let mut wrt = BufWriter::new(File::create(&output_filename)?);
     let (bpp, indexed) = if e.keg_bm_type == PegBmType::Rgba5551 as u8 {
         (16, false)
@@ -212,32 +218,34 @@ fn extract_peg_mipmap<R: Read>(rdr: &mut R, e: &PegFileEntry, level: u8, pal: &[
 }
 
 fn extract_peg_bitmap<R: Read>(rdr: &mut R, e: &PegFileEntry, output_dir: &Option<String>) -> Result<()> {
-    let mut pal = [PalEntry::default(); 256];
-    if e.keg_bm_type == PegBmType::Indexed as u8 {
-        println!("Extracting palette");
-        for i in 0..256 {
-            pal[i] = if e.keg_pal_type == PegPalType::Rgba5551 as u8 {
-                let w = rdr.read_u16::<LittleEndian>()?;
-                PalEntry { // TODO: rounding or remove conversion
-                    r: (((w >> 0) & 0x1f) * 255 / 31) as u8,
-                    g: (((w >> 5) & 0x1f) * 255 / 31) as u8,
-                    b: (((w >> 10) & 0x1f) * 255 / 31) as u8,
-                    a: (((w >> 15) & 0x1) * 255) as u8,
-                }
-            } else if e.keg_pal_type == PegPalType::Rgba8888 as u8 {
-                PalEntry {
-                    r: rdr.read_u8()?,
-                    g: rdr.read_u8()?,
-                    b: rdr.read_u8()?,
-                    a: rdr.read_u8()?,
-                }
-            } else {
-                panic!("Unknown keg_pal_type: {}", e.keg_pal_type)
-            };
-        }
-        for level in 0..e.mip_levels {
-            extract_peg_mipmap(rdr, e, level, &pal, output_dir)?;
-            
+    for frame in 0..e.num_frames {
+        let mut pal = [PalEntry::default(); 256];
+        if e.keg_bm_type == PegBmType::Indexed as u8 {
+            println!("Extracting palette");
+            for i in 0..256 {
+                pal[i] = if e.keg_pal_type == PegPalType::Rgba5551 as u8 {
+                    let w = rdr.read_u16::<LittleEndian>()?;
+                    PalEntry { // TODO: rounding or remove conversion
+                        r: (((w >> 0) & 0x1f) * 255 / 31) as u8,
+                        g: (((w >> 5) & 0x1f) * 255 / 31) as u8,
+                        b: (((w >> 10) & 0x1f) * 255 / 31) as u8,
+                        a: (((w >> 15) & 0x1) * 255) as u8,
+                    }
+                } else if e.keg_pal_type == PegPalType::Rgba8888 as u8 {
+                    PalEntry {
+                        r: rdr.read_u8()?,
+                        g: rdr.read_u8()?,
+                        b: rdr.read_u8()?,
+                        a: rdr.read_u8()?,
+                    }
+                } else {
+                    panic!("Unknown keg_pal_type: {}", e.keg_pal_type)
+                };
+            }
+            for level in 0..e.mip_levels {
+                extract_peg_mipmap(rdr, e, level, frame, &pal, output_dir)?;
+                
+            }
         }
     }
     Ok(())
