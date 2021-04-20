@@ -242,10 +242,9 @@ fn extract_peg_bitmap<R: Read>(rdr: &mut R, e: &PegFileEntry, output_dir: &Optio
                     panic!("Unknown keg_pal_type: {}", e.keg_pal_type)
                 };
             }
-            for level in 0..e.mip_levels {
-                extract_peg_mipmap(rdr, e, level, frame, &pal, output_dir)?;
-                
-            }
+        }
+        for level in 0..e.mip_levels {
+            extract_peg_mipmap(rdr, e, level, frame, &pal, output_dir)?;
         }
     }
     Ok(())
