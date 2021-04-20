@@ -5,6 +5,7 @@ members = [
     "vpp",
     "makevbm",
     "vsound",
+    "peg",
 ]
 
 [profile.dev]
