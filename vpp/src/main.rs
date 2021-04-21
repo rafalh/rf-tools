@@ -270,8 +270,8 @@ fn list_vpp_content(packfile_path: &str) -> Result<()> {
 fn help() {
     println!("Usage:");
     println!("  vpp -c vpp_path files...    - create packfile");
-    println!("  vpp -x vpp_path             - extract packfile");
-    println!("  vpp -l vpp_path             - list packfile content");
+    println!("  vpp -x vpp_path...          - extract packfile(s)");
+    println!("  vpp -l vpp_path...          - list packfile(s) content");
     println!("Additional options:");
     println!("  --dep-info  - write vpp dependencies into .d file using Makefile syntax");
 }
@@ -336,12 +336,14 @@ fn main() -> Result<()> {
             }
         },
         Mode::List => {
-            let vpp_path = args.positional_args.first().unwrap();
-            list_vpp_content(vpp_path)?;
+            for vpp_path in &args.positional_args {
+                list_vpp_content(vpp_path)?;
+            }
         },
         Mode::Extract => {
-            let vpp_path = args.positional_args.first().unwrap();
-            extract_vpp(vpp_path, None, args.verbose)?;
+            for vpp_path in &args.positional_args {
+                extract_vpp(vpp_path, None, args.verbose)?;
+            }
         },
         Mode::Help => help(),
         Mode::Version => version(),
