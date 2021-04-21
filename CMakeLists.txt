@@ -23,4 +23,3 @@ endif()
 
 add_subdirectory(vbm-exporter)
 add_subdirectory(vf-exporter)
-add_subdirectory(vpp-exporter)
