@@ -161,7 +161,6 @@ struct PalEntry {
 fn extract_peg_mipmap<R: Read>(rdr: &mut R, e: &PegFileEntry, level: u8, frame: u8, pal: &[PalEntry; 256], output_dir: &Option<String>) -> Result<()> {
     let w = e.width >> level;
     let h = e.height >> level;
-    println!("level {} w {} h {}", level, w, h);
     let output_filename = format!(
         "{}/{}_{:04}_mip{}.tga",
         output_dir.clone().unwrap_or(".".to_string()),
@@ -169,6 +168,7 @@ fn extract_peg_mipmap<R: Read>(rdr: &mut R, e: &PegFileEntry, level: u8, frame: 
         frame,
         level
     );
+    println!("Writing mip level {} ({}x{}) to {}.", level, w, h, output_filename);
     let mut wrt = BufWriter::new(File::create(&output_filename)?);
     let (bpp, indexed) = if e.keg_bm_type == PegBmType::Rgba5551 as u8 {
         (16, false)
@@ -260,7 +260,6 @@ fn extract_peg_file(pathname: &str, output_dir: &Option<String>) -> Result<()> {
         entries.push(PegFileEntry::read(&mut rdr)?)
     }
 
-
     for e in &entries {
         println!("Extracting {}...", e.filename);
         rdr.seek(SeekFrom::Start(e.data_offset.try_into().unwrap()))?;
@@ -304,9 +303,10 @@ fn parse_args() -> ParsedArgs {
     }
 
     let op = op_opt.unwrap_or_else(|| {
-        match positional.len() {
-            1 => Operation::Info,
-            _ => Operation::Help,
+        if positional.len() > 0 {
+            Operation::Info
+        } else {
+            Operation::Help
         }
     });
 
@@ -333,8 +333,16 @@ fn print_version() {
 fn main() -> Result<()> {
     let args = parse_args();
     match args.op {
-        Operation::Info => print_peg_file_info(&args.positional[0])?,
-        Operation::Extract => extract_peg_file(&args.positional[0], &args.output_dir)?,
+        Operation::Info => {
+            for pathname in &args.positional {
+                print_peg_file_info(pathname)?;
+            }
+        },
+        Operation::Extract => {
+            for pathname in &args.positional {
+                extract_peg_file(pathname, &args.output_dir)?;
+            }
+        }
         Operation::Help => print_help(),
         Operation::Version => print_version()
     }
