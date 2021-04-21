@@ -5,10 +5,13 @@ mod targa;
 use std::io::{Read, Write, Result, BufReader, BufWriter, Seek, SeekFrom};
 use std::env;
 use std::fs::File;
+use std::cmp;
 use std::convert::TryInto;
 use byteorder::{ReadBytesExt, WriteBytesExt, LittleEndian};
 
 enum PegBmType {
+    Mpeg2_16 = 1,
+    Mpeg2_32 = 2,
     Rgba5551 = 3,
     Indexed8 = 4,
     Indexed4 = 5,
@@ -228,7 +231,37 @@ fn extract_peg_mipmap<R: Read>(rdr: &mut R, e: &PegFileEntry, level: u8, frame: 
     Ok(())
 }
 
+fn extract_mpeg_video<R: Read>(rdr: &mut R, e: &PegFileEntry, output_dir: &Option<String>) -> Result<()> {
+    let total_size = rdr.read_u32::<LittleEndian>()?;
+    let unk0 = rdr.read_u32::<LittleEndian>()?;
+    let unk1 = rdr.read_u32::<LittleEndian>()?;
+    let unk2 = rdr.read_u32::<LittleEndian>()?;
+    println!("MPEG2 video header: {:x} {:x} {} {}", total_size, unk0, unk1, unk2);
+
+    let output_filename = format!("{}/{}.mpg", output_dir.clone().unwrap_or(".".to_string()), e.filename);
+    let mut wrt = BufWriter::new(File::create(&output_filename)?);
+
+    let mut buf = [0u8; 4096];
+    let mut bytes_left = (total_size - 16) as usize;
+    while bytes_left > 0 {
+        let bytes_to_read = cmp::min(bytes_left, buf.len());
+        let bytes_read = rdr.read(&mut buf[..bytes_to_read])?;
+        if bytes_read == 0 {
+            break;
+        }
+        wrt.write_all(&buf[..bytes_read])?;
+        bytes_left -= bytes_read;
+    }
+    Ok(())
+}
+
 fn extract_peg_bitmap<R: Read>(rdr: &mut R, e: &PegFileEntry, output_dir: &Option<String>) -> Result<()> {
+
+    if e.keg_bm_type == PegBmType::Mpeg2_16 as u8 || e.keg_bm_type == PegBmType::Mpeg2_32 as u8 {
+        extract_mpeg_video(rdr, e, output_dir)?;
+        return Ok(());
+    }
+
     for frame in 0..e.num_frames {
         let mut pal = [PalEntry::default(); 256];
         if e.keg_bm_type == PegBmType::Indexed8 as u8 || e.keg_bm_type == PegBmType::Indexed4 as u8 {
@@ -272,7 +305,7 @@ fn extract_peg_file(pathname: &str, output_dir: &Option<String>) -> Result<()> {
     }
 
     for e in &entries {
-        println!("Extracting {}...", e.filename);
+        println!("Extracting {} (offset {:x})...", e.filename, e.data_offset);
         rdr.seek(SeekFrom::Start(e.data_offset.try_into().unwrap()))?;
         extract_peg_bitmap(&mut rdr, e, output_dir)?;
     }
