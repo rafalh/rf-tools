@@ -10,7 +10,8 @@ use byteorder::{ReadBytesExt, WriteBytesExt, LittleEndian};
 
 enum PegBmType {
     Rgba5551 = 3,
-    Indexed  = 4,
+    Indexed8 = 4,
+    Indexed4 = 5,
     Rgba8888 = 7,
 }
 
@@ -172,7 +173,9 @@ fn extract_peg_mipmap<R: Read>(rdr: &mut R, e: &PegFileEntry, level: u8, frame: 
     let mut wrt = BufWriter::new(File::create(&output_filename)?);
     let (bpp, indexed) = if e.keg_bm_type == PegBmType::Rgba5551 as u8 {
         (16, false)
-    } else if e.keg_bm_type == PegBmType::Indexed as u8 {
+    } else if e.keg_bm_type == PegBmType::Indexed8 as u8 {
+        (32, true)
+    } else if e.keg_bm_type == PegBmType::Indexed4 as u8 {
         (32, true)
     } else if e.keg_bm_type == PegBmType::Rgba8888 as u8 {
         (32, false)
@@ -191,13 +194,21 @@ fn extract_peg_mipmap<R: Read>(rdr: &mut R, e: &PegFileEntry, level: u8, frame: 
     }
 
     for _ in 0..h {
-        for _ in 0..w {
+        for x in 0..w {
             if e.keg_bm_type == PegBmType::Rgba5551 as u8 {
                 let w = rdr.read_u16::<LittleEndian>()?;
                 wrt.write_u16::<LittleEndian>(w)?;
-            } else if e.keg_bm_type == PegBmType::Indexed as u8 {
+            } else if e.keg_bm_type == PegBmType::Indexed8 as u8 {
                 let index = rdr.read_u8()?;
                 wrt.write_u8(index)?;
+            } else if e.keg_bm_type == PegBmType::Indexed4 as u8 {
+                if x % 2 == 0 {
+                    let index = rdr.read_u8()?;
+                    wrt.write_u8(index & 0x0F)?;
+                    if x + 1 < w {
+                        wrt.write_u8((index >> 4) & 0x0F)?;
+                    }
+                }
             } else if e.keg_bm_type == PegBmType::Rgba8888 as u8 {
                 let [r, g, b, a] = [
                     rdr.read_u8()?,
@@ -220,9 +231,9 @@ fn extract_peg_mipmap<R: Read>(rdr: &mut R, e: &PegFileEntry, level: u8, frame: 
 fn extract_peg_bitmap<R: Read>(rdr: &mut R, e: &PegFileEntry, output_dir: &Option<String>) -> Result<()> {
     for frame in 0..e.num_frames {
         let mut pal = [PalEntry::default(); 256];
-        if e.keg_bm_type == PegBmType::Indexed as u8 {
-            println!("Extracting palette");
-            for i in 0..256 {
+        if e.keg_bm_type == PegBmType::Indexed8 as u8 || e.keg_bm_type == PegBmType::Indexed4 as u8 {
+            let num_pal_entries = if e.keg_bm_type == PegBmType::Indexed8 as u8 { 256 } else { 16 };
+            for i in 0..num_pal_entries {
                 pal[i] = if e.keg_pal_type == PegPalType::Rgba5551 as u8 {
                     let w = rdr.read_u16::<LittleEndian>()?;
                     PalEntry { // TODO: rounding or remove conversion
