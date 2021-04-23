@@ -22,6 +22,7 @@ const V3D_VERSION: u32 = 0x40000;
 // Section types
 const V3D_END: u32       = 0x00000000; // terminating section
 const V3D_SUBMESH: u32   = 0x5355424D;
+const V3D_CSPHERE: u32   = 0x43535048;
 
 type Vector3 = [f32; 3];
 type Plane = [f32; 4];
@@ -34,6 +35,10 @@ fn create_custom_error<S: Into<String>>(msg: S) -> std::io::Error {
 
 fn get_submesh_nodes(doc: &gltf::Document) -> impl Iterator<Item = gltf::Node> {
     doc.nodes().filter(|n| n.mesh().is_some())
+}
+
+fn get_csphere_nodes(doc: &gltf::Document) -> impl Iterator<Item = gltf::Node> {
+    doc.nodes().filter(|n| n.mesh().is_none()).filter(|n| n.name().unwrap_or("").starts_with("csphere_"))
 }
 
 fn get_submesh_textures(node: &gltf::Node) -> Vec<String> {
@@ -58,7 +63,8 @@ fn write_v3d_header<W: Write>(wrt: &mut W, doc: &gltf::Document) -> std::io::Res
     wrt.write_u32::<LittleEndian>(num_all_materials as u32)?;
     wrt.write_u32::<LittleEndian>(0)?; // unknown1
     wrt.write_u32::<LittleEndian>(0)?; // unknown2
-    wrt.write_u32::<LittleEndian>(0)?; // num_colspheres
+    let num_colspheres = get_csphere_nodes(doc).count();
+    wrt.write_u32::<LittleEndian>(num_colspheres as u32)?;
     Ok(())
 }
 
@@ -628,6 +634,19 @@ fn write_v3d_subm_sect<W: Write>(wrt: &mut W, node: &gltf::Node, buffers: &Vec<B
     Ok(())
 }
 
+fn write_v3d_csphere_sect<W: Write>(wrt: &mut W, node: &gltf::Node) -> std::io::Result<()> {
+    let name = node.name().unwrap_or("csphere");
+    let (translation, _rotation, scale) = node.transform().decomposed();
+    let radius = scale[0].max(scale[1]).max(scale[2]);
+    wrt.write_u32::<LittleEndian>(V3D_CSPHERE)?; // section type
+    wrt.write_u32::<LittleEndian>(24 + 12 + 4)?; // section size
+    write_char_array(wrt, name, 24)?;
+    wrt.write_i32::<LittleEndian>(-1)?; // parent index
+    write_f32_slice(wrt, &translation)?; // pos
+    wrt.write_f32::<LittleEndian>(radius)?;
+    Ok(())
+}
+
 fn write_v3d_end_sect<W: Write>(wrt: &mut W) -> std::io::Result<()> {
     wrt.write_u32::<LittleEndian>(V3D_END)?; // section_type
     wrt.write_u32::<LittleEndian>(0)?; // section_size (unused by the game)
@@ -643,6 +662,9 @@ fn write_v3d<W: Write>(wrt: &mut W, document: &gltf::Document, buffers: &Vec<Buf
     write_v3d_header(wrt, document)?;
     for node in get_submesh_nodes(document) {
         write_v3d_subm_sect(wrt, &node, buffers)?;
+    }
+    for node in get_csphere_nodes(document) {
+        write_v3d_csphere_sect(wrt, &node)?;
     }
     write_v3d_end_sect(wrt)?;
     Ok(())
