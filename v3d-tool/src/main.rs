@@ -28,14 +28,11 @@ fn get_prop_point_nodes<'a>(parent: &gltf::Node<'a>) -> impl Iterator<Item = glt
     parent.children().filter(|n| n.mesh().is_none() && n.name().is_some())
 }
 
-fn get_submesh_textures(node: &gltf::Node) -> Vec<String> {
-    let mesh = node.mesh().unwrap();
-    let mut textures = mesh.primitives()
-        .map(|prim| get_material_base_color_texture_name(&prim.material()))
+fn get_mesh_materials<'a>(mesh: &gltf::Mesh<'a>) -> Vec<gltf::Material<'a>> {
+    let mut materials = mesh.primitives().map(|prim| prim.material())
         .collect::<Vec<_>>();
-    textures.sort();
-    textures.dedup();
-    textures
+    materials.dedup_by_key(|m| m.index());
+    materials
 }
 
 fn create_v3m_file_header(lod_meshes: &Vec<v3mc::LodMesh>, cspheres: &Vec<v3mc::ColSphere>) -> v3mc::FileHeader {
@@ -43,7 +40,7 @@ fn create_v3m_file_header(lod_meshes: &Vec<v3mc::LodMesh>, cspheres: &Vec<v3mc::
         signature: v3mc::V3M_SIGNATURE,
         version: v3mc::VERSION,
         num_lod_meshes: lod_meshes.len() as i32,
-        num_all_materials: lod_meshes.into_iter().map(|lm| lm.materials.len()).sum::<usize>() as i32,
+        num_all_materials: lod_meshes.iter().map(|lm| lm.materials.len()).sum::<usize>() as i32,
         num_cspheres: cspheres.len() as i32,
         ..v3mc::FileHeader::default()
     }
@@ -116,10 +113,12 @@ fn extract_translation_from_matrix(transform: &Matrix4) -> (Vector3, Matrix3) {
     (translation, rot_scale_mat)
 }
 
-fn create_mesh_chunk_info(prim: &gltf::Primitive, textures: &Vec::<String>) -> v3mc::MeshDataBlockChunkInfo {
+fn create_mesh_chunk_info(prim: &gltf::Primitive, materials: &Vec::<gltf::Material>) -> v3mc::MeshDataBlockChunkInfo {
     // write texture index in LOD model textures array
-    let texture_name = get_material_base_color_texture_name(&prim.material());
-    let texture_index = textures.iter().position(|t| t == &texture_name).expect("find texture") as i32;
+    let prim_mat = prim.material();
+    let texture_index = materials.iter()
+        .position(|m| m.index() == prim_mat.index())
+        .expect("find texture") as i32;
 
     v3mc::MeshDataBlockChunkInfo{
         texture_index,
@@ -190,11 +189,11 @@ fn create_mesh_data_block<'a>(
     mesh: &gltf::Mesh, 
     buffers: &Vec<BufferData>, 
     transform: &Matrix3, 
-    textures: &Vec::<String>, 
+    mesh_materials: &Vec::<gltf::Material>, 
     prop_points_nodes: impl Iterator<Item = &'a gltf::Node<'a>>
 ) -> v3mc::MeshDataBlock {
     v3mc::MeshDataBlock{
-        chunks: mesh.primitives().map(|prim| create_mesh_chunk_info(&prim, textures)).collect(),
+        chunks: mesh.primitives().map(|prim| create_mesh_chunk_info(&prim, mesh_materials)).collect(),
         chunks_data: mesh.primitives().map(|prim| create_mesh_chunk_data(&prim, buffers, transform)).collect(),
         prop_points: prop_points_nodes.map(|prop| create_prop_point(&prop, transform)).collect(),
     }
@@ -283,18 +282,22 @@ fn create_mesh_chunk(prim: &gltf::Primitive) -> std::io::Result<v3mc::MeshChunk>
     })
 }
 
-fn create_mesh_texture_ref(tex_name: &str, textures: &Vec::<String>) -> v3mc::MeshTextureRef {
-    let material_index = textures.iter().position(|n| n == tex_name).unwrap().try_into().unwrap();
+fn create_mesh_material_ref(material: &gltf::Material, lod_mesh_materials: &Vec::<gltf::Material>) -> v3mc::MeshTextureRef {
+    let material_index = lod_mesh_materials.iter()
+        .position(|m| m.index() == material.index())
+        .unwrap()
+        .try_into()
+        .unwrap();
     v3mc::MeshTextureRef{
         material_index,
-        tex_name: tex_name.into(),
+        tex_name: get_material_base_color_texture_name(material),
     }
 }
 
 fn convert_mesh(
     node: &gltf::Node, 
     buffers: &Vec<BufferData>, 
-    lod_mesh_tex_names: &Vec::<String>,
+    lod_mesh_materials: &Vec::<gltf::Material>,
     transform: &Matrix3
 ) -> std::io::Result<v3mc::Mesh> {
 
@@ -302,12 +305,10 @@ fn convert_mesh(
     let flags = 0x20; // 0x1|0x02 - characters, 0x20 - static meshes, 0x10 only driller01.v3m
     let num_vecs = count_mesh_vertices(&mesh) as i32;
 
-    let tex_names: Vec<_> = mesh.primitives()
-        .map(|prim| get_material_base_color_texture_name(&prim.material()))
-        .collect();
-    if tex_names.len() > v3mc::Mesh::MAX_TEXTURES {
-        return Err(new_custom_error(format!("found {} textures in a submesh but only {} are allowed",
-        tex_names.len(), v3mc::Mesh::MAX_TEXTURES)));
+    let materials: Vec<_> = get_mesh_materials(&mesh);
+    if materials.len() > v3mc::Mesh::MAX_TEXTURES {
+        return Err(new_custom_error(format!("found {} materials in a submesh but only {} are allowed",
+        materials.len(), v3mc::Mesh::MAX_TEXTURES)));
     }
 
     let prop_point_nodes: Vec<_> = get_prop_point_nodes(node).collect();
@@ -318,13 +319,13 @@ fn convert_mesh(
     }
 
     let mut data_block_cur = Cursor::new(Vec::<u8>::new());
-    create_mesh_data_block(&mesh, buffers, transform, &tex_names, prop_point_nodes.iter())
+    create_mesh_data_block(&mesh, buffers, transform, &materials, prop_point_nodes.iter())
         .write(&mut data_block_cur)?;
     let data_block: Vec::<u8> = data_block_cur.into_inner();
     
     let num_prop_points = prop_point_nodes.len() as i32;
-    let tex_refs: Vec<_> = tex_names.into_iter()
-        .map(|tex_name| create_mesh_texture_ref(&tex_name, lod_mesh_tex_names))
+    let tex_refs: Vec<_> = materials.iter()
+        .map(|m| create_mesh_material_ref(m, lod_mesh_materials))
         .collect();
 
     Ok(v3mc::Mesh{
@@ -335,15 +336,6 @@ fn convert_mesh(
         num_prop_points,
         textures: tex_refs,
     })
-}
-
-fn create_material(tex_name: &str, emissive_factor: f32) -> v3mc::Material {
-    v3mc::Material{
-        tex_name: tex_name.to_string(),
-        self_illumination: emissive_factor,
-        flags: 0x11,
-        ..v3mc::Material::default()
-    }
 }
 
 fn change_texture_ext_to_tga(name: &str) -> String {
@@ -370,12 +362,24 @@ fn get_material_base_color_texture_name(material: &gltf::material::Material) -> 
     DEFAULT_TEXTURE.into()
 }
 
-fn get_emissive_factor(mesh: &gltf::Mesh, texture: &str) -> f32 {
-    mesh.primitives()
-        .filter(|prim| get_material_base_color_texture_name(&prim.material()) == texture)
-        .map(|prim| prim.material().emissive_factor())
-        .map(|emissive_factor_rgb| emissive_factor_rgb.iter().cloned().fold(0f32, f32::max))
-        .fold(0f32, f32::max)
+fn convert_material(mat: &gltf::Material) -> v3mc::Material {
+    let tex_name = get_material_base_color_texture_name(&mat);
+    let self_illumination = mat.emissive_factor().iter().cloned().fold(0f32, f32::max);
+    let specular_level = mat.pbr_specular_glossiness()
+        .map(|spec_glos| spec_glos.specular_factor().iter().cloned().fold(0f32, f32::max))
+        .unwrap_or_else(|| mat.pbr_metallic_roughness().metallic_factor());
+    let glossiness = mat.pbr_specular_glossiness()
+        .map(|spec_glos| spec_glos.glossiness_factor())
+        .unwrap_or_else(|| 1.0 - mat.pbr_metallic_roughness().roughness_factor());
+
+    v3mc::Material{
+        tex_name,
+        self_illumination,
+        specular_level,
+        glossiness,
+        flags: 0x11,
+        ..v3mc::Material::default()
+    }
 }
 
 fn convert_lod_mesh(node: &gltf::Node, buffers: &Vec<BufferData>) -> std::io::Result<v3mc::LodMesh> {
@@ -394,13 +398,9 @@ fn convert_lod_mesh(node: &gltf::Node, buffers: &Vec<BufferData>) -> std::io::Re
     let offset = origin;
     let radius = compute_mesh_bounding_sphere_radius(&mesh, buffers, &rot_scale_mat);
 
-    let textures = get_submesh_textures(node);
-    let meshes: Vec<_> = vec!(convert_mesh(&node, buffers, &textures, &rot_scale_mat)?);
-
-    let materials: Vec<_> = textures.into_iter().map(|tex_name| {
-        let emissive_factor = get_emissive_factor(&mesh, &tex_name);
-        create_material(&tex_name, emissive_factor)
-    }).collect();
+    let gltf_materials = get_mesh_materials(&mesh);
+    let meshes: Vec<_> = vec!(convert_mesh(&node, buffers, &gltf_materials, &rot_scale_mat)?);
+    let materials: Vec<_> = gltf_materials.iter().map(|m| convert_material(m)).collect();
 
     Ok(v3mc::LodMesh{
         name,

@@ -12,5 +12,5 @@ base64 = "0.10"
 
 [dependencies.gltf]
 version = "0.15"
-features = ["extras", "names", "utils"]
+features = ["extras", "names", "utils", "KHR_materials_pbrSpecularGlossiness"]
 default-features = false

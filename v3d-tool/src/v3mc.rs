@@ -413,15 +413,15 @@ impl ColSphere {
     }
 }
 
-#[derive(Default)]
+#[derive(Default, PartialEq)]
 pub struct Material {
-    pub tex_name: String,
-    pub self_illumination: f32,
-    pub specular_level: f32,
-    pub glossiness: f32,
-    pub reflection_amount: f32,
-    pub refl_tex_name: String,
-    pub flags: u32,
+    pub tex_name: String,  // not used by RF PC
+    pub self_illumination: f32,  // used by static lighting code that is not working in RF PC (it does work in DF)
+    pub specular_level: f32,  // not used by RF PC
+    pub glossiness: f32,  // not used by RF PC
+    pub reflection_amount: f32,  // not used by RF PC
+    pub refl_tex_name: String,  // not used by RF PC
+    pub flags: u32,  // not used by RF PC
 }
 
 impl Material {
