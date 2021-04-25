@@ -462,7 +462,7 @@ fn convert_gltf_to_v3m(input_file_name: &str, output_file_name: &str) -> Result<
 }
 
 fn main() {
-    println!("GLTF to V3M converter 0.1 by Rafalh");
+    println!("GLTF to V3M converter {} by Rafalh", env!("CARGO_PKG_VERSION"));
 
     let mut args = env::args();
     let app_name = args.next().unwrap();

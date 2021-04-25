@@ -143,7 +143,7 @@ fn print_help() {
 }
 
 fn print_version() {
-    println!("VSound Tool v0.1 by rafalh");
+    println!("VSound Tool {} by Rafalh", env!("CARGO_PKG_VERSION"));
 }
 
 fn print_vsound_header(hdr: &VSoundHeader) {

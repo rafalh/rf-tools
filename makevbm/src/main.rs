@@ -109,7 +109,7 @@ fn make_vbm(color_mode_name: &str, framerate_str: &str, input_file_name: &str) -
 }
 
 fn main() {
-    println!("makevbm 0.1 created by rafalh");
+    println!("makevbm {} created by Rafalh", env!("CARGO_PKG_VERSION"));
     let args = env::args().collect::<Vec<_>>();
     if env::args().len() != 4 {
         println!("Usage: {} colormode framerate input_file", args[0]);

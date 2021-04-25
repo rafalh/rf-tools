@@ -277,7 +277,7 @@ fn help() {
 }
 
 fn version() {
-    println!("VPP tool v0.1 created by Rafalh");
+    println!("VPP Tool {} created by Rafalh", env!("CARGO_PKG_VERSION"));
 }
 
 enum Mode

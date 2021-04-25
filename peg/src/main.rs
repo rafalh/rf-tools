@@ -371,7 +371,7 @@ fn print_help() {
 }
 
 fn print_version() {
-    println!("PEG Tool v0.1 by rafalh");
+    println!("PEG Tool {} by Rafalh", env!("CARGO_PKG_VERSION"));
 }
 
 fn main() -> Result<()> {
