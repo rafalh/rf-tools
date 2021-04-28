@@ -1,6 +1,6 @@
 [package]
-name = "v3d-tool"
-version = "0.1.0"
+name = "vmesh"
+version = "0.2.0"
 authors = ["Rafał Harabień <rafalh92@outlook.com>"]
 edition = "2018"
 

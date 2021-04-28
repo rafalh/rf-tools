@@ -1,7 +1,7 @@
 [workspace]
 
 members = [
-    "v3d-tool",
+    "vmesh",
     "vpp",
     "makevbm",
     "vsound",

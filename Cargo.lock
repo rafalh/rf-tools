@@ -561,8 +561,8 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f7fe0bb3479651439c9112f72b6c505038574c9fbb575ed1bf3b797fa39dd564"
 
 [[package]]
-name = "v3d-tool"
-version = "0.1.0"
+name = "vmesh"
+version = "0.2.0"
 dependencies = [
  "base64",
  "byteorder",

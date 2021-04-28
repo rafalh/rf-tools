@@ -1,8 +1,8 @@
 
-V3D Tool
-========
+VMesh Tool
+==========
 
-V3D Tool converts 3D meshes in GLTF format to V3M format (.v3m file extension). Only static meshes are supported right now.
+VMesh Tool converts 3D meshes in GLTF format to V3M format (.v3m file extension). Only static meshes are supported right now.
 V3M format is used by Red Faction game on PC platform.
 
 Collision spheres are supported (they are used for collisions with vehicles and other non-player objects). To make a collision sphere create a node without a mesh in the root of the object hierarchy (Blender: Add -> Empty -> Sphere). Object scale determines collision sphere radius (axis with maximal value is used). Object name must start with "csphere_".
@@ -15,7 +15,7 @@ relative to the parent.
 Usage
 -----
 
-    v3d-tool input.gltf output.v3m
+    vmesh input.gltf output.v3m
 
 Limitations
 -----------

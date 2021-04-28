@@ -244,12 +244,12 @@ impl MeshDataBlock {
             chunk.write(wrt)?;
         }
         // padding to 0x10 (to data section begin)
-        write_v3d_mesh_data_padding(wrt)?;
+        write_v3mc_data_block_padding(wrt)?;
         for chunk_data in &self.chunks_data {
             chunk_data.write(wrt)?;
         }
         // padding to 0x10 (to data section begin)
-        write_v3d_mesh_data_padding(wrt)?;
+        write_v3mc_data_block_padding(wrt)?;
         for prop in &self.prop_points {
             prop.write(wrt)?;
         }
@@ -257,7 +257,7 @@ impl MeshDataBlock {
     }
 }
 
-pub fn write_v3d_mesh_data_padding<W: Write + Seek>(wrt: &mut W) -> std::io::Result<()> {
+fn write_v3mc_data_block_padding<W: Write + Seek>(wrt: &mut W) -> std::io::Result<()> {
     let mut pos = wrt.seek(SeekFrom::Current(0))?;
     while pos & 0xF != 0 {
         wrt.write_u8(0)?;
@@ -272,12 +272,12 @@ pub struct MeshDataBlockChunkInfo {
 
 impl MeshDataBlockChunkInfo {
     pub fn write<W: Write>(&self, wrt: &mut W) -> Result<()> {
-        // unused data before texture index (game overrides it with data from v3d_batch_info)
+        // unused data before texture index (game overrides it with data from MeshChunk)
         let unused_0 = [0u8; 0x20];
         wrt.write_all(&unused_0)?;
         // write texture index in LOD model textures array
         wrt.write_i32::<LittleEndian>(self.texture_index)?;
-        // unused data after texture index (game overrides it with data from v3d_batch_info)
+        // unused data after texture index (game overrides it with data from MeshChunk)
         let unused_24 = [0u8; 0x38 - 0x24];
         wrt.write_all(&unused_24)?;
         Ok(())
@@ -299,45 +299,42 @@ impl MeshChunkData {
         for pos in &self.vecs {
             wrt.write_f32_slice_le(pos)?;
         }
-        write_v3d_mesh_data_padding(wrt)?;
+        write_v3mc_data_block_padding(wrt)?;
     
         for norm in &self.norms {
             wrt.write_f32_slice_le(norm)?;
         }
-        write_v3d_mesh_data_padding(wrt)?;
+        write_v3mc_data_block_padding(wrt)?;
     
         for uv in &self.uvs {
             wrt.write_f32_slice_le(uv)?;
         }
-        write_v3d_mesh_data_padding(wrt)?;
+        write_v3mc_data_block_padding(wrt)?;
     
         for face in &self.faces {
             face.write(wrt)?;
         }
-        write_v3d_mesh_data_padding(wrt)?;
+        write_v3mc_data_block_padding(wrt)?;
 
         // write triangle planes (used for backface culling)
-        // if(v3d_submesh_lod::flags & 0x20)
         for p in &self.face_planes {
             wrt.write_f32_slice_le(p)?;
         }
-        write_v3d_mesh_data_padding(wrt)?;
+        write_v3mc_data_block_padding(wrt)?;
     
         // same_pos_vertex_offsets
         for off in &self.same_pos_vertex_offsets {
             wrt.write_i16::<LittleEndian>(*off)?;
         }
-        write_v3d_mesh_data_padding(wrt)?;
+        write_v3mc_data_block_padding(wrt)?;
     
-        // if (v3d_batch_info::bone_links_size)
         for wi in &self.wi {
             wi.write(wrt)?;
         }
-        write_v3d_mesh_data_padding(wrt)?;
+        write_v3mc_data_block_padding(wrt)?;
     
-        // if (v3d_submesh_lod::flags & 0x1) // morph_vertices_map
-        // {
-        //     float [v3d_submesh_lod::unknown0 * 2];
+        // if (Mesh::flags & 0x1) { // morph_vertices_map
+        //     orig_vert_map: [u16; Mesh::num_vertices];
         //     // padding to 0x10 (to data section begin)
         // }
         Ok(())

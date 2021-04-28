@@ -3,7 +3,7 @@ RF Tools
 
 Tools for Red Faction game:
 
-* v3d-tool - generates V3M files based on GLTF (3D models)
+* vmesh - converts GLTF to V3M files (3D models)
 * vbm-exporter - exports content of VBM files into series of TGA images
 * vf-exporter - exports content of VF file (font) into TGA image
 * vpp-exporter - unpacks packfiles (files with `.vpp` extension)
