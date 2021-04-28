@@ -567,6 +567,9 @@ dependencies = [
  "base64",
  "byteorder",
  "gltf",
+ "serde",
+ "serde_derive",
+ "serde_json",
 ]
 
 [[package]]
