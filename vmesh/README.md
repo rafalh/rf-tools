@@ -5,12 +5,20 @@ VMesh Tool
 VMesh Tool converts 3D meshes in GLTF format to V3M format (.v3m file extension). Only static meshes are supported right now.
 V3M format is used by Red Faction game on PC platform.
 
-Collision spheres are supported (they are used for collisions with vehicles and other non-player objects). To make a collision sphere create a node without a mesh in the root of the object hierarchy (Blender: Add -> Empty -> Sphere). Object scale determines collision sphere radius (axis with maximal value is used). Object name must start with "csphere_".
+Collision spheres
+-----------------
+Collision spheres are used for collisions with vehicles and other non-player objects. To make a collision sphere create
+a node without a mesh in the root of the object hierarchy (Blender: Add -> Empty -> Sphere). Object scale determines
+collision sphere radius (axis with maximal value is used). Object name must start with the string "csphere_".
 
-When creating a mesh with LOD (Level of Detail) support start with the most detailed mesh and create less detailed meshes
-as its children. Add custom property `LOD_distance` to child nodes and set it to minimal distance at which mesh should be
-rendered. Parent mesh (the most detailed one) has implicit distance of 0. Child meshes should not use any transformations
-relative to the parent.
+Level of detail (LOD)
+---------------------
+Create the most detailed mesh as root level node and create less detailed meshes as its children.
+Add custom property `LOD_distance` to child nodes and set it to the minimal distance at
+which mesh should be rendered in game units (meters). Parent mesh (the most detailed one) has implicit distance of 0.
+Child meshes should not use any transformations relative to the parent.
+Be aware that Blender plugin by default does not export custom properties. You must enable them in the export options.
+Keep in mind that RF uses the least detailed mesh for detection of collisions with player character.
 
 Usage
 -----

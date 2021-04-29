@@ -416,7 +416,7 @@ fn convert_lod_mesh(node: &gltf::Node, buffers: &[BufferData]) -> std::io::Resul
         })
         .filter(|(n, d)| {
             if d.is_none() {
-                eprint!("Expected lod_distance in child node {}", n.name().unwrap_or("None"));
+                eprint!("Warning! Expected LOD_distance in child node {}\n", n.name().unwrap_or("None"));
             }
             d.is_some()
         })
