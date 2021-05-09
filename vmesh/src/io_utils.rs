@@ -3,8 +3,8 @@ use byteorder::{LittleEndian, WriteBytesExt};
 
 pub(crate) trait WriteExt: Write {
     fn write_f32_slice_le(&mut self, slice: &[f32]) -> std::io::Result<()> {
-        for i in 0..slice.len() {
-            self.write_f32::<LittleEndian>(slice[i])?;
+        for val in slice {
+            self.write_f32::<LittleEndian>(*val)?;
         }
         Ok(())
     }

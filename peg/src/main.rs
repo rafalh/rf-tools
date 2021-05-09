@@ -162,30 +162,28 @@ struct PalEntry {
     a: u8,
 }
 
-fn extract_peg_mipmap<R: Read>(rdr: &mut R, e: &PegFileEntry, level: u8, frame: u8, pal: &[PalEntry; 256], output_dir: &Option<String>) -> Result<()> {
-    let w = e.width >> level;
-    let h = e.height >> level;
+fn extract_peg_mipmap<R: Read>(rdr: &mut R, ent: &PegFileEntry, level: u8, frame: u8, pal: &[PalEntry; 256], output_dir: Option<&str>) -> Result<()> {
+    let width = ent.width >> level;
+    let height = ent.height >> level;
     let output_filename = format!(
         "{}/{}_{:04}_mip{}.tga",
-        output_dir.clone().unwrap_or(".".to_string()),
-        e.filename.trim_end_matches(".tga"),
+        output_dir.as_deref().unwrap_or("."),
+        ent.filename.trim_end_matches(".tga"),
         frame,
         level
     );
-    println!("Writing mip level {} ({}x{}) to {}.", level, w, h, output_filename);
+    println!("Writing mip level {} ({}x{}) to {}.", level, width, height, output_filename);
     let mut wrt = BufWriter::new(File::create(&output_filename)?);
-    let (bpp, indexed) = if e.keg_bm_type == PegBmType::Rgba5551 as u8 {
+    let (bpp, indexed) = if ent.keg_bm_type == PegBmType::Rgba5551 as u8 {
         (16, false)
-    } else if e.keg_bm_type == PegBmType::Indexed8 as u8 {
+    } else if ent.keg_bm_type == PegBmType::Indexed8 as u8 || ent.keg_bm_type == PegBmType::Indexed4 as u8 {
         (32, true)
-    } else if e.keg_bm_type == PegBmType::Indexed4 as u8 {
-        (32, true)
-    } else if e.keg_bm_type == PegBmType::Rgba8888 as u8 {
+    } else if ent.keg_bm_type == PegBmType::Rgba8888 as u8 {
         (32, false)
     } else {
-        panic!("Unsupported keg_bm_type: {}", e.keg_bm_type)
+        panic!("Unsupported keg_bm_type: {}", ent.keg_bm_type)
     };
-    targa::TgaFileHeader::new(w as i16, h as i16, bpp, indexed).write(&mut wrt)?;
+    targa::TgaFileHeader::new(width as i16, height as i16, bpp, indexed).write(&mut wrt)?;
 
     if indexed {
         for pal_e in pal {
@@ -196,49 +194,49 @@ fn extract_peg_mipmap<R: Read>(rdr: &mut R, e: &PegFileEntry, level: u8, frame: 
         }
     }
 
-    for _ in 0..h {
-        for x in 0..w {
-            if e.keg_bm_type == PegBmType::Rgba5551 as u8 {
-                let w = rdr.read_u16::<LittleEndian>()?;
-                wrt.write_u16::<LittleEndian>(w)?;
-            } else if e.keg_bm_type == PegBmType::Indexed8 as u8 {
-                let index = rdr.read_u8()?;
-                wrt.write_u8(index)?;
-            } else if e.keg_bm_type == PegBmType::Indexed4 as u8 {
+    for _ in 0..height {
+        for x in 0..width {
+            if ent.keg_bm_type == PegBmType::Rgba5551 as u8 {
+                let pixel = rdr.read_u16::<LittleEndian>()?;
+                wrt.write_u16::<LittleEndian>(pixel)?;
+            } else if ent.keg_bm_type == PegBmType::Indexed8 as u8 {
+                let pal_index = rdr.read_u8()?;
+                wrt.write_u8(pal_index)?;
+            } else if ent.keg_bm_type == PegBmType::Indexed4 as u8 {
                 if x % 2 == 0 {
-                    let index = rdr.read_u8()?;
-                    wrt.write_u8(index & 0x0F)?;
-                    if x + 1 < w {
-                        wrt.write_u8((index >> 4) & 0x0F)?;
+                    let pal_index = rdr.read_u8()?;
+                    wrt.write_u8(pal_index & 0x0F)?;
+                    if x + 1 < width {
+                        wrt.write_u8((pal_index >> 4) & 0x0F)?;
                     }
                 }
-            } else if e.keg_bm_type == PegBmType::Rgba8888 as u8 {
-                let [r, g, b, a] = [
+            } else if ent.keg_bm_type == PegBmType::Rgba8888 as u8 {
+                let [red, green, blue, alpha] = [
                     rdr.read_u8()?,
                     rdr.read_u8()?,
                     rdr.read_u8()?,
                     rdr.read_u8()?,
                 ];
-                wrt.write_u8(r)?;
-                wrt.write_u8(g)?;
-                wrt.write_u8(b)?;
-                wrt.write_u8(a)?;
+                wrt.write_u8(red)?;
+                wrt.write_u8(green)?;
+                wrt.write_u8(blue)?;
+                wrt.write_u8(alpha)?;
             } else {
-                panic!("Unsupported keg_bm_type: {}", e.keg_bm_type);
+                panic!("Unsupported keg_bm_type: {}", ent.keg_bm_type);
             }
         }
     }
     Ok(())
 }
 
-fn extract_mpeg_video<R: Read>(rdr: &mut R, e: &PegFileEntry, output_dir: &Option<String>) -> Result<()> {
+fn extract_mpeg_video<R: Read>(rdr: &mut R, e: &PegFileEntry, output_dir: Option<&str>) -> Result<()> {
     let total_size = rdr.read_u32::<LittleEndian>()?;
     let unk0 = rdr.read_u32::<LittleEndian>()?;
     let unk1 = rdr.read_u32::<LittleEndian>()?;
     let unk2 = rdr.read_u32::<LittleEndian>()?;
     println!("MPEG2 video header: {:x} {:x} {} {}", total_size, unk0, unk1, unk2);
 
-    let output_filename = format!("{}/{}.mpg", output_dir.clone().unwrap_or(".".to_string()), e.filename);
+    let output_filename = format!("{}/{}.mpg", output_dir.unwrap_or("."), e.filename);
     let mut wrt = BufWriter::new(File::create(&output_filename)?);
 
     let mut buf = [0u8; 4096];
@@ -255,7 +253,7 @@ fn extract_mpeg_video<R: Read>(rdr: &mut R, e: &PegFileEntry, output_dir: &Optio
     Ok(())
 }
 
-fn extract_peg_bitmap<R: Read>(rdr: &mut R, e: &PegFileEntry, output_dir: &Option<String>) -> Result<()> {
+fn extract_peg_bitmap<R: Read>(rdr: &mut R, e: &PegFileEntry, output_dir: Option<&str>) -> Result<()> {
 
     if e.keg_bm_type == PegBmType::Mpeg2_16 as u8 || e.keg_bm_type == PegBmType::Mpeg2_32 as u8 {
         extract_mpeg_video(rdr, e, output_dir)?;
@@ -266,11 +264,11 @@ fn extract_peg_bitmap<R: Read>(rdr: &mut R, e: &PegFileEntry, output_dir: &Optio
         let mut pal = [PalEntry::default(); 256];
         if e.keg_bm_type == PegBmType::Indexed8 as u8 || e.keg_bm_type == PegBmType::Indexed4 as u8 {
             let num_pal_entries = if e.keg_bm_type == PegBmType::Indexed8 as u8 { 256 } else { 16 };
-            for i in 0..num_pal_entries {
-                pal[i] = if e.keg_pal_type == PegPalType::Rgba5551 as u8 {
+            for pal_ent in pal.iter_mut().take(num_pal_entries) {
+                *pal_ent = if e.keg_pal_type == PegPalType::Rgba5551 as u8 {
                     let w = rdr.read_u16::<LittleEndian>()?;
                     PalEntry { // TODO: rounding or remove conversion
-                        r: (((w >> 0) & 0x1f) * 255 / 31) as u8,
+                        r: (((w)      & 0x1f) * 255 / 31) as u8,
                         g: (((w >> 5) & 0x1f) * 255 / 31) as u8,
                         b: (((w >> 10) & 0x1f) * 255 / 31) as u8,
                         a: (((w >> 15) & 0x1) * 255) as u8,
@@ -294,7 +292,7 @@ fn extract_peg_bitmap<R: Read>(rdr: &mut R, e: &PegFileEntry, output_dir: &Optio
     Ok(())
 }
 
-fn extract_peg_file(pathname: &str, output_dir: &Option<String>) -> Result<()> {
+fn extract_peg_file(pathname: &str, output_dir: Option<&str>) -> Result<()> {
     let mut rdr = BufReader::new(File::open(pathname)?);
     let hdr = PegFileHeader::read(&mut rdr)?;
     hdr.check();
@@ -347,7 +345,7 @@ fn parse_args() -> ParsedArgs {
     }
 
     let op = op_opt.unwrap_or_else(|| {
-        if positional.len() > 0 {
+        if !positional.is_empty() {
             Operation::Info
         } else {
             Operation::Help
@@ -384,7 +382,7 @@ fn main() -> Result<()> {
         },
         Operation::Extract => {
             for pathname in &args.positional {
-                extract_peg_file(pathname, &args.output_dir)?;
+                extract_peg_file(pathname, args.output_dir.as_deref())?;
             }
         }
         Operation::Help => print_help(),

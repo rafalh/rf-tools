@@ -1,4 +1,3 @@
-
 mod import;
 mod io_utils;
 mod math_utils;
@@ -12,7 +11,6 @@ use std::env;
 use std::convert::TryInto;
 use std::f32;
 use std::iter;
-use gltf;
 use serde_derive::Deserialize;
 use import::BufferData;
 use io_utils::new_custom_error;
@@ -88,6 +86,7 @@ fn compute_mesh_bbox(mesh: &gltf::Mesh, buffers: &[BufferData], transform: &Matr
         if let Some(iter) = reader.read_positions() {
             for pos in iter {
                 let tpos = transform_point(&pos, transform);
+                #[allow(clippy::needless_range_loop)]
                 for i in 0..3 {
                     aabb.min[i] = aabb.min[i].min(tpos[i]);
                     aabb.max[i] = aabb.max[i].max(tpos[i]);
@@ -354,7 +353,7 @@ fn convert_mesh(
 }
 
 fn change_texture_ext_to_tga(name: &str) -> String {
-    let dot_offset = name.find('.').unwrap_or(name.len());
+    let dot_offset = name.find('.').unwrap_or_else(|| name.len());
     let mut owned = name.to_owned();
     owned.replace_range(dot_offset.., ".tga");
     owned
@@ -371,7 +370,7 @@ fn get_material_base_color_texture_name(material: &gltf::material::Material) -> 
             return change_texture_ext_to_tga(uri);
         }
     }
-    const DEFAULT_TEXTURE: &'static str = "Rck_Default.tga";
+    const DEFAULT_TEXTURE: &str = "Rck_Default.tga";
     eprintln!("Cannot obtain texture name for material {} (materials without base color texture are not supported)",
         material.index().unwrap_or(0));
     DEFAULT_TEXTURE.into()
@@ -410,13 +409,13 @@ fn convert_lod_mesh(node: &gltf::Node, buffers: &[BufferData]) -> std::io::Resul
     let mut child_node_dist_vec: Vec<(gltf::Node, f32)> = node.children()
         .filter(|n| n.mesh().is_some())
         .map(|n| {
-            let extras_raw: &Box<serde_json::value::RawValue> = n.extras().as_ref().unwrap();
+            let extras_raw: &serde_json::value::RawValue = n.extras().as_ref().unwrap();
             let extras = serde_json::from_str::<NodeExtras>(extras_raw.get()).unwrap();
             (n, extras.lod_distance)
         })
         .filter(|(n, d)| {
             if d.is_none() {
-                eprint!("Warning! Expected LOD_distance in child node {}\n", n.name().unwrap_or("None"));
+                eprintln!("Warning! Expected LOD_distance in child node {}", n.name().unwrap_or("None"));
             }
             d.is_some()
         })

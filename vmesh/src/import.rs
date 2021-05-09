@@ -4,7 +4,6 @@
 // It is workaround for: https://github.com/gltf-rs/gltf/issues/222 
 
 use gltf::{self, buffer};
-use base64;
 use std::{fs, io, ops};
 use std::path::Path;
 use gltf::{Document, Error, Result};
@@ -38,22 +37,23 @@ enum Scheme<'a> {
 }
 
 impl<'a> Scheme<'a> {
-    fn parse<'s>(uri: &'s str) -> Scheme<'s> {
-        if uri.contains(":") {
-            if uri.starts_with("data:") {
-                let match0 = &uri["data:".len()..].split(";base64,").nth(0);
-                let match1 = &uri["data:".len()..].split(";base64,").nth(1);
-                if match1.is_some() {
-                    Scheme::Data(Some(match0.unwrap()), match1.unwrap())
-                } else if match0.is_some() {
-                    Scheme::Data(None, match0.unwrap())
+    fn parse(uri: &str) -> Scheme {
+        if uri.contains(':') {
+            if let Some(stripped_uri) = uri.strip_prefix("data:") {
+                let mut iter = stripped_uri.split(";base64,");
+                if let Some(match0) = iter.next() {
+                    if let Some(match1) = iter.next() {
+                        Scheme::Data(Some(match0), match1)
+                    } else {
+                        Scheme::Data(None, match0)
+                    }
                 } else {
                     Scheme::Unsupported
                 }
-            } else if uri.starts_with("file://") {
-                Scheme::File(&uri["file://".len()..])
-            } else if uri.starts_with("file:") {
-                Scheme::File(&uri["file:".len()..])
+            } else if let Some(stripped_uri) = uri.strip_prefix("file://") {
+                Scheme::File(stripped_uri)
+            } else if let Some(stripped_uri) = uri.strip_prefix("file:") {
+                Scheme::File(stripped_uri)
             } else {
                 Scheme::Unsupported
             }
@@ -93,7 +93,7 @@ pub fn import_buffer_data(
     for buffer in document.buffers() {
         let mut data = match buffer.source() {
             buffer::Source::Uri(uri) if base.is_some() => Scheme::read(base.unwrap(), uri),
-            buffer::Source::Bin => blob.take().ok_or(Error::Io(io::Error::new(io::ErrorKind::Other, "MissingBlob"))),
+            buffer::Source::Bin => blob.take().ok_or_else(|| Error::Io(io::Error::new(io::ErrorKind::Other, "MissingBlob"))),
             _ => Err(Error::Io(io::Error::new(io::ErrorKind::Other, "ExternalReferenceInSliceImport")))
         }?;
         if data.len() < buffer.length() {

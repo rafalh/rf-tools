@@ -42,7 +42,7 @@ pub(crate) fn compute_triangle_normal(p0: &Vector3, p1: &Vector3, p2: &Vector3) 
     normal[1] /= len;
     normal[2] /= len;
 
-    return normal;
+    normal
 }
 
 pub(crate) fn compute_triangle_plane(p0: &Vector3, p1: &Vector3, p2: &Vector3) -> Plane {

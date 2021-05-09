@@ -86,7 +86,7 @@ impl VppEntry {
     fn write<W: Write>(&self, wrt: &mut W) -> Result<()> {
         let mut name_buf = [0u8; Self::NAME_MAX_LEN];
         name_buf[..self.name.len()].copy_from_slice(&self.name);
-        wrt.write_all(&mut name_buf)?;
+        wrt.write_all(&name_buf)?;
         wrt.write_u32_le(self.size)?;
         Ok(())
     }
@@ -96,8 +96,8 @@ fn process_file_list(file_list: Vec<String>) -> Result<Vec<String>> {
     debug!("Processing file list");
     let mut result = Vec::new();
     for filename in file_list {
-        if filename.starts_with("@") {
-            let file = File::open(&filename[1..])?;
+        if let Some(list_filename) = filename.strip_prefix("@") {
+            let file = File::open(list_filename)?;
             for line_result in BufReader::new(file).lines() {
                 let line = line_result?;
                 let trimmed_line = line.trim();
@@ -117,7 +117,7 @@ fn transform_filename_for_dep_file(filename: &str) -> Result<String> {
     Ok(abs_path.display().to_string().replace(" ", "\\ "))
 }
 
-fn create_dep_file(packfile_path: &str, file_list: &Vec<String>) -> Result<()> {
+fn create_dep_file(packfile_path: &str, file_list: &[String]) -> Result<()> {
     debug!("Creating dep file");
     let mut file = BufWriter::new(File::create(packfile_path.to_string() + ".d")?);
     write!(file, "{}:", transform_filename_for_dep_file(packfile_path)?)?;
@@ -127,7 +127,7 @@ fn create_dep_file(packfile_path: &str, file_list: &Vec<String>) -> Result<()> {
     Ok(())
 }
 
-fn create_vpp(packfile_path: &str, file_list: &Vec<String>, verbose: bool) -> Result<()> {
+fn create_vpp(packfile_path: &str, file_list: &[String], verbose: bool) -> Result<()> {
     debug!("Opening output file {}", packfile_path);
     let mut file = File::create(packfile_path)?;
 
@@ -210,7 +210,7 @@ fn extract_vpp(packfile_path: &str, output_dir: Option<&str>, verbose: bool) -> 
     let mut entries = Vec::<VppEntry>::new();
 
     for _ in 0..hdr.num_files {
-        if block_rdr.len() == 0 {
+        if block_rdr.is_empty() {
             file.read_exact(&mut block)?;
             block_rdr = &block;
         }
