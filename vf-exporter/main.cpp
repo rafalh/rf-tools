@@ -74,7 +74,8 @@ void write_font_tga(const std::string &filename, const vf_header_t &hdr, const v
 
     size_t bytes_per_pixel = hdr.format == VF_FMT_RGBA_4444 ? 2 : 1;
     size_t num_pixels = hdr.pixel_data_size / bytes_per_pixel;
-    size_t w, h;
+    size_t w;
+    size_t h;
     determine_output_image_size(num_pixels, w, h);
     
     tga_header tga_hdr;
@@ -82,7 +83,7 @@ void write_font_tga(const std::string &filename, const vf_header_t &hdr, const v
     output_tga_stream.write(reinterpret_cast<char*>(&tga_hdr), sizeof(tga_hdr));
 
     auto bitmap_data = std::make_unique<uint32_t[]>(w * h); // RGBA
-    memset(bitmap_data.get(), 0, w * h * sizeof(uint32_t));
+    std::memset(bitmap_data.get(), 0, w * h * sizeof(uint32_t));
 
     int dst_x = 0;
     int dst_y = 1;
@@ -95,7 +96,7 @@ void write_font_tga(const std::string &filename, const vf_header_t &hdr, const v
             dst_y += hdr.height + 3;
         }
         if (dst_y + hdr.height + 3 > h)
-            throw std::string("Font is too big");
+            throw std::runtime_error("Font is too big");
         
         // Top and buttom border
         uint32_t border_clr = 0;//0xFF00FF00;
@@ -117,7 +118,7 @@ void write_font_tga(const std::string &filename, const vf_header_t &hdr, const v
             for (unsigned off_x = 1; off_x < char_desc[char_idx].width + 1; ++off_x)
             {
                 uint32_t &out_pixel = bitmap_data[(dst_y + off_y) * w + dst_x + off_x];
-                uint8_t *out_pixel_bytes = reinterpret_cast<uint8_t*>(&out_pixel);
+                auto *out_pixel_bytes = reinterpret_cast<uint8_t*>(&out_pixel);
                 if (hdr.format == VF_FMT_MONO_4)
                 {
                     int in_pixel_value = *reinterpret_cast<const uint8_t*>(in_pixel_data);
@@ -151,7 +152,7 @@ void write_font_tga(const std::string &filename, const vf_header_t &hdr, const v
     output_tga_stream.write(reinterpret_cast<char*>(bitmap_data.get()), w * h * sizeof(uint32_t));
 }
 
-int export_font(const char *vf_filename, const std::string &output_prefix)
+void export_font(const char *vf_filename, const std::string &output_prefix)
 {
     std::ifstream vf_stream(vf_filename, std::ifstream::in | std::ifstream::binary);
     vf_stream.exceptions(std::ifstream::failbit | std::ifstream::badbit);
@@ -160,15 +161,9 @@ int export_font(const char *vf_filename, const std::string &output_prefix)
     vf_header_t hdr;
     read_vf_header(hdr, vf_stream);
     if (hdr.signature != VF_SIGNATURE)
-    {
-        std::cerr << "Invalid VF signature!\n";
-        return -1;
-    }
+        throw std::runtime_error("Invalid VF signature!");
     if (hdr.version > 1)
-    {
-        std::cerr << "Unsupported VF version!\n";
-        return -1;
-    }
+        throw std::runtime_error("Unsupported VF version!");
 
     print_vf_metadata(hdr);
 
@@ -187,10 +182,9 @@ int export_font(const char *vf_filename, const std::string &output_prefix)
     
     std::string output_filename = output_prefix + get_basename_without_ext(vf_filename) + ".tga";
     write_font_tga(output_filename, hdr, char_desc.get(), pixel_data.get(), palette.get());
-    return 0;
 }
 
-int main(int argc, char *argv[])
+int main(int argc, char *argv[]) try
 {
     std::string output_prefix;
     bool help = true;
@@ -209,7 +203,7 @@ int main(int argc, char *argv[])
             help = true;
         else
         {
-            input_files.push_back(argv[i]);
+            input_files.emplace_back(argv[i]);
             help = false;
         }
     }
@@ -220,11 +214,13 @@ int main(int argc, char *argv[])
         return -1;
     }
 
-    for (auto input_file : input_files)
-    {
-        if (export_font(input_file, output_prefix) != 0)
-            return -1;
-    }
+    for (const char* input_file : input_files)
+        export_font(input_file, output_prefix);
 
     return 0;
+}
+catch (const std::exception& e)
+{
+    std::cerr << e.what() << std::endl;
+    return -1;
 }

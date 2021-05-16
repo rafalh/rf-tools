@@ -1,0 +1,18 @@
+---
+Checks: >
+  clang-analyzer-*,
+
+  modernize-*,
+  -modernize-use-trailing-return-type,
+  -modernize-avoid-c-arrays,
+
+  portability-*,
+
+  bugprone-*,
+  -bugprone-narrowing-conversions,
+
+  readability-*,
+  -readability-magic-numbers,
+  -readability-braces-around-statements,
+  -readability-implicit-bool-conversion,
+  -readability-uppercase-literal-suffix,

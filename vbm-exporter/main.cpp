@@ -13,9 +13,9 @@
 const char *vbm_format_str(uint32_t format)
 {
     if (format == VBM_CF_1555) return "1555";
-    else if (format == VBM_CF_4444) return "4444";
-    else if (format == VBM_CF_565) return "565";
-    else return nullptr;
+    if (format == VBM_CF_4444) return "4444";
+    if (format == VBM_CF_565) return "565";
+    return nullptr;
 }
 
 void print_vbm_metadata(const vbm_header_t &hdr)
@@ -38,7 +38,7 @@ void write_tga_frame(const std::string &filename, const char *pixel_data, int w,
     init_tga_header(tga_hdr, w, h, hdr.format == VBM_CF_565 ? 24 : 32);
     output_tga_stream.write(reinterpret_cast<char*>(&tga_hdr), sizeof(tga_hdr));
 
-    const uint16_t *input_pixels = reinterpret_cast<const uint16_t*>(pixel_data);
+    const auto *input_pixels = reinterpret_cast<const uint16_t*>(pixel_data);
     for (int i = 0; i < w * h; ++i)
     {
         uint16_t input_pixel = input_pixels[i];
@@ -155,7 +155,7 @@ int main(int argc, char *argv[])
             verbose = true;
         else
         {
-            input_files.push_back(argv[i]);
+            input_files.emplace_back(argv[i]);
             help = false;
         }
     }
@@ -166,7 +166,7 @@ int main(int argc, char *argv[])
         return -1;
     }
 
-    for (auto input_file : input_files)
+    for (const char* input_file : input_files)
     {
         if (export_vbm(input_file, output_prefix, verbose) != 0)
             return -1;
