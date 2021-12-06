@@ -501,8 +501,8 @@ fn make_v3m_file(doc: &gltf::Document, buffers: &[BufferData]) -> Result<v3mc::F
 
 fn convert_gltf_to_v3m(input_file_name: &str, output_file_name: &str) -> Result<(), Box<dyn Error>> {
     println!("Importing GLTF file {}...", input_file_name);
-    let gltf = gltf::Gltf::open(&input_file_name)?;
-    let input_path: &std::path::Path = input_file_name.as_ref();
+    let input_path = Path::new(input_file_name);
+    let gltf = gltf::Gltf::open(input_path)?;
     let gltf::Gltf { document, blob } = gltf;
 
     println!("Importing GLTF buffers...");
