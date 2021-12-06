@@ -192,7 +192,7 @@ fn create_prop_point(node: &gltf::Node, transform: &Matrix3) -> v3mc::PropPoint 
     v3mc::PropPoint{
         name: node.name().expect("prop point name").to_string(),
         orient: rotation,
-        pos: transform_point(&translation, &transform),
+        pos: transform_point(&translation, transform),
         parent_index: -1,
     }
 }
@@ -207,7 +207,7 @@ fn create_mesh_data_block(
     v3mc::MeshDataBlock{
         chunks: mesh.primitives().map(|prim| create_mesh_chunk_info(&prim, mesh_materials)).collect(),
         chunks_data: mesh.primitives().map(|prim| create_mesh_chunk_data(&prim, buffers, transform)).collect(),
-        prop_points: prop_points_nodes.iter().map(|prop| create_prop_point(&prop, transform)).collect(),
+        prop_points: prop_points_nodes.iter().map(|prop| create_prop_point(prop, transform)).collect(),
     }
 }
 
@@ -380,7 +380,7 @@ fn get_material_base_color_texture_name(material: &gltf::material::Material) -> 
 }
 
 fn convert_material(mat: &gltf::Material) -> v3mc::Material {
-    let tex_name = get_material_base_color_texture_name(&mat);
+    let tex_name = get_material_base_color_texture_name(mat);
     let self_illumination = get_material_self_illumination(mat);
     let specular_level = mat.pbr_specular_glossiness()
         .map(|spec_glos| spec_glos.specular_factor().iter().cloned().fold(0f32, f32::max))
@@ -445,7 +445,7 @@ fn convert_lod_mesh(node: &gltf::Node, buffers: &[BufferData]) -> std::io::Resul
         .flat_map(|(n, _)| get_mesh_materials(&n.mesh().unwrap()))
         .collect(); 
     gltf_materials.dedup_by_key(|m| m.index());
-    let materials: Vec<_> = gltf_materials.iter().map(|m| convert_material(m)).collect();
+    let materials: Vec<_> = gltf_materials.iter().map(convert_material).collect();
 
     let meshes: Vec<_> = child_node_dist_vec.iter()
         .map(|(n, _)| convert_mesh(n, buffers, &gltf_materials, &prop_point_nodes, &rot_scale_mat).unwrap())
@@ -478,7 +478,7 @@ fn convert_csphere(node: &gltf::Node) -> v3mc::ColSphere {
 }
 
 fn write_v3m_file<W: Write + Seek>(wrt: &mut W, doc: &gltf::Document, buffers: &[BufferData]) -> std::io::Result<()> {
-    let lod_meshes: Vec<_> = get_submesh_nodes(doc).iter().map(|n| convert_lod_mesh(&n, buffers).unwrap()).collect();
+    let lod_meshes: Vec<_> = get_submesh_nodes(doc).iter().map(|n| convert_lod_mesh(n, buffers).unwrap()).collect();
     let cspheres: Vec<_> = get_csphere_nodes(doc).map(|n| convert_csphere(&n)).collect();
     v3mc::File{
         header: create_v3m_file_header(&lod_meshes, &cspheres),

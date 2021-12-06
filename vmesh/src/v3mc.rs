@@ -462,6 +462,7 @@ pub enum AlphaOp {
 }
 
 #[allow(dead_code)]
+#[allow(clippy::enum_variant_names)]
 pub enum AlphaBlend {
     None = 0x0,
     AlphaAdditive = 0x1,

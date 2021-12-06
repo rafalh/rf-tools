@@ -96,7 +96,7 @@ fn process_file_list(file_list: Vec<String>) -> Result<Vec<String>> {
     debug!("Processing file list");
     let mut result = Vec::new();
     for filename in file_list {
-        if let Some(list_filename) = filename.strip_prefix("@") {
+        if let Some(list_filename) = filename.strip_prefix('@') {
             let file = File::open(list_filename)?;
             for line_result in BufReader::new(file).lines() {
                 let line = line_result?;

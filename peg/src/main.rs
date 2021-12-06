@@ -167,7 +167,7 @@ fn extract_peg_mipmap<R: Read>(rdr: &mut R, ent: &PegFileEntry, level: u8, frame
     let height = ent.height >> level;
     let output_filename = format!(
         "{}/{}_{:04}_mip{}.tga",
-        output_dir.as_deref().unwrap_or("."),
+        output_dir.unwrap_or("."),
         ent.filename.trim_end_matches(".tga"),
         frame,
         level
