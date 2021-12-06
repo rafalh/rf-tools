@@ -12,6 +12,7 @@ use std::convert::TryInto;
 use std::f32;
 use std::iter;
 use std::error::Error;
+use std::path::Path;
 use serde_derive::Deserialize;
 use import::BufferData;
 use io_utils::new_custom_error;
@@ -530,15 +531,9 @@ fn main() {
 
     let input_file_name = args.next().unwrap();
     let output_file_name = args.next().unwrap_or_else(|| {
-        format!(
-            "{}.v3m",
-            input_file_name
-                .strip_suffix(".gltf")
-                .unwrap_or(&input_file_name)
-                .strip_suffix(".glb")
-                .unwrap_or(&input_file_name)
-                .to_owned()
-        )
+        let base_file_name = input_file_name.strip_suffix(".gltf")
+            .unwrap_or_else(|| input_file_name.strip_suffix(".glb").unwrap_or(&input_file_name));
+        format!("{}.v3m", base_file_name)
     });
 
     if let Err(e) = convert_gltf_to_v3m(&input_file_name, &output_file_name) {
