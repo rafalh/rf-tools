@@ -510,13 +510,23 @@ fn main() {
 
     let mut args = env::args();
     let app_name = args.next().unwrap();
-    if env::args().len() != 3 {
-        println!("Usage: {} input_file_name.gltf output_file_name.v3m", app_name);
+    if env::args().len() < 2 {
+        println!("Usage: {} input_file_name.gltf [output_file_name.v3m]", app_name);
         std::process::exit(1);
     }
 
     let input_file_name = args.next().unwrap();
-    let output_file_name = args.next().unwrap();
+    let output_file_name = args.next().unwrap_or_else(|| {
+        format!(
+            "{}.v3m",
+            input_file_name
+                .strip_suffix(".gltf")
+                .unwrap_or(&input_file_name)
+                .strip_suffix(".glb")
+                .unwrap_or(&input_file_name)
+                .to_owned()
+        )
+    });
 
     if let Err(e) = convert_gltf_to_v3m(&input_file_name, &output_file_name) {
         eprintln!("Error: {}", e);
