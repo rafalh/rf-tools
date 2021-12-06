@@ -3,7 +3,7 @@ mod io_utils;
 mod math_utils;
 mod v3mc;
 
-use std::io::{prelude::*, Cursor};
+use std::io::Cursor;
 use std::fs::File;
 use std::io::BufWriter;
 use std::vec::Vec;
@@ -11,6 +11,7 @@ use std::env;
 use std::convert::TryInto;
 use std::f32;
 use std::iter;
+use std::error::Error;
 use serde_derive::Deserialize;
 use import::BufferData;
 use io_utils::new_custom_error;
@@ -27,8 +28,8 @@ fn get_submesh_nodes(doc: &gltf::Document) -> Vec<gltf::Node> {
     doc.nodes().filter(|n| n.mesh().is_some() && !child_indices.contains(&n.index())).collect()
 }
 
-fn get_csphere_nodes(doc: &gltf::Document) -> impl Iterator<Item = gltf::Node> {
-    doc.nodes().filter(|n| n.mesh().is_none()).filter(|n| n.name().unwrap_or("").starts_with("csphere_"))
+fn get_csphere_nodes(doc: &gltf::Document) -> Vec<gltf::Node> {
+    doc.nodes().filter(|n| n.mesh().is_none()).filter(|n| n.name().unwrap_or("").starts_with("csphere_")).collect()
 }
 
 fn get_prop_point_nodes<'a>(parent: &gltf::Node<'a>) -> impl Iterator<Item = gltf::Node<'a>> {
@@ -405,7 +406,7 @@ struct NodeExtras {
     lod_distance: Option<f32>,
 }
 
-fn convert_lod_mesh(node: &gltf::Node, buffers: &[BufferData]) -> std::io::Result<v3mc::LodMesh> {
+fn convert_lod_mesh(node: &gltf::Node, buffers: &[BufferData]) -> Result<v3mc::LodMesh, Box<dyn Error>> {
     let node_transform = node.transform().matrix();
     let mesh = node.mesh().unwrap();
 
@@ -447,9 +448,10 @@ fn convert_lod_mesh(node: &gltf::Node, buffers: &[BufferData]) -> std::io::Resul
     gltf_materials.dedup_by_key(|m| m.index());
     let materials: Vec<_> = gltf_materials.iter().map(convert_material).collect();
 
-    let meshes: Vec<_> = child_node_dist_vec.iter()
-        .map(|(n, _)| convert_mesh(n, buffers, &gltf_materials, &prop_point_nodes, &rot_scale_mat).unwrap())
-        .collect();
+    let mut meshes: Vec<_> = Vec::with_capacity(child_node_dist_vec.len());
+    for (n, _) in &child_node_dist_vec {
+        meshes.push(convert_mesh(n, buffers, &gltf_materials, &prop_point_nodes, &rot_scale_mat)?);
+    }
 
     Ok(v3mc::LodMesh{
         name,
@@ -477,17 +479,27 @@ fn convert_csphere(node: &gltf::Node) -> v3mc::ColSphere {
     }
 }
 
-fn write_v3m_file<W: Write + Seek>(wrt: &mut W, doc: &gltf::Document, buffers: &[BufferData]) -> std::io::Result<()> {
-    let lod_meshes: Vec<_> = get_submesh_nodes(doc).iter().map(|n| convert_lod_mesh(n, buffers).unwrap()).collect();
-    let cspheres: Vec<_> = get_csphere_nodes(doc).map(|n| convert_csphere(&n)).collect();
-    v3mc::File{
+fn make_v3m_file(doc: &gltf::Document, buffers: &[BufferData]) -> Result<v3mc::File, Box<dyn Error>> {
+    let submesh_nodes = get_submesh_nodes(doc);
+    let mut lod_meshes = Vec::with_capacity(submesh_nodes.len());
+    for n in &submesh_nodes {
+        lod_meshes.push(convert_lod_mesh(n, buffers)?);
+    }
+
+    let csphere_nodes = get_csphere_nodes(doc);
+    let mut cspheres = Vec::with_capacity(csphere_nodes.len());
+    for n in &csphere_nodes {
+        cspheres.push(convert_csphere(n));
+    }
+
+    Ok(v3mc::File{
         header: create_v3m_file_header(&lod_meshes, &cspheres),
         lod_meshes,
         cspheres,
-    }.write(wrt)
+    })
 }
 
-fn convert_gltf_to_v3m(input_file_name: &str, output_file_name: &str) -> Result<(), Box<dyn std::error::Error>> {
+fn convert_gltf_to_v3m(input_file_name: &str, output_file_name: &str) -> Result<(), Box<dyn Error>> {
     println!("Importing GLTF file {}...", input_file_name);
     let gltf = gltf::Gltf::open(&input_file_name)?;
     let input_path: &std::path::Path = input_file_name.as_ref();
@@ -497,13 +509,10 @@ fn convert_gltf_to_v3m(input_file_name: &str, output_file_name: &str) -> Result<
     let buffers = import::import_buffer_data(&document, input_path.parent(), blob)?;
     
     println!("Converting...");
+    let v3m = make_v3m_file(&document, &buffers)?;
     let file = File::create(output_file_name)?;
     let mut wrt = BufWriter::new(file);
-    if let Err(e) = write_v3m_file(&mut wrt, &document, &buffers) {
-        drop(wrt);
-        let _ = std::fs::remove_file(output_file_name);
-        return Err(e.into());
-    }
+    v3m.write(&mut wrt)?;
     
     println!("Converted successfully.");
     Ok(())
