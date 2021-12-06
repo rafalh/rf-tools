@@ -499,7 +499,11 @@ fn convert_gltf_to_v3m(input_file_name: &str, output_file_name: &str) -> Result<
     println!("Converting...");
     let file = File::create(output_file_name)?;
     let mut wrt = BufWriter::new(file);
-    write_v3m_file(&mut wrt, &document, &buffers)?;
+    if let Err(e) = write_v3m_file(&mut wrt, &document, &buffers) {
+        drop(wrt);
+        let _ = std::fs::remove_file(output_file_name);
+        return Err(e.into());
+    }
     
     println!("Converted successfully.");
     Ok(())
