@@ -261,9 +261,11 @@ fn create_mesh_chunk(prim: &gltf::Primitive) -> std::io::Result<v3mc::MeshChunk>
 
     let index_count = prim.indices().unwrap().count();
     assert!(index_count % 3 == 0, "number of indices is not a multiple of three: {}", index_count);
+    println!("Index count: {}", index_count);
 
     let tri_count = index_count / 3;
     let vertex_count = get_primitive_vertex_count(prim);
+    println!("Vertex count: {}", vertex_count);
 
     if env::var("IGNORE_GEOMETRY_LIMITS").is_err() {
         let index_limit = 10000 - 768;
@@ -329,6 +331,7 @@ fn convert_mesh(
 
     let mut chunks = Vec::new();
     for prim in mesh.primitives() {
+        println!("Processing mesh {} in node {}", mesh.index(), node.index());
         chunks.push(create_mesh_chunk(&prim)?);
     }
 
