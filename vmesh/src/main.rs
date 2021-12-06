@@ -272,7 +272,7 @@ fn create_mesh_chunk(prim: &gltf::Primitive) -> std::io::Result<v3mc::MeshChunk>
         }
 
         let vertex_limit = 6000 - 768;
-        if vertex_count > 6000 {
+        if vertex_count > vertex_limit {
             return Err(new_custom_error(format!("primitive has too many vertices: {} (limit {})", vertex_count, vertex_limit)));
         }
     }
