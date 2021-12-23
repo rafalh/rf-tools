@@ -140,7 +140,7 @@ fn create_mesh_chunk_info(prim: &gltf::Primitive, materials: &[gltf::Material]) 
 }
 
 fn create_mesh_chunk_data(prim: &gltf::Primitive, buffers: &[BufferData],
-    transform: &Matrix3) -> v3mc::MeshChunkData {
+    transform: &Matrix3, is_character: bool) -> v3mc::MeshChunkData {
     
     let reader = prim.reader(|buffer| Some(&buffers[buffer.index()]));
 
@@ -170,10 +170,14 @@ fn create_mesh_chunk_data(prim: &gltf::Primitive, buffers: &[BufferData],
         })
         .collect();
 
-    let face_planes: Vec::<_> = indices.chunks(3)
-        .map(|tri| (tri[0] as usize, tri[1] as usize, tri[2] as usize))
-        .map(|(i, j, k)| compute_triangle_plane(&vecs[i], &vecs[j], &vecs[k]))
-        .collect();
+    let face_planes: Vec::<_> = if !is_character {
+        indices.chunks(3)
+            .map(|tri| (tri[0] as usize, tri[1] as usize, tri[2] as usize))
+            .map(|(i, j, k)| compute_triangle_plane(&vecs[i], &vecs[j], &vecs[k]))
+            .collect()
+    } else {
+        Vec::new()
+    };
 
     let same_pos_vertex_offsets: Vec<i16> = (0..nv).map(|_| 0).collect();
     
@@ -216,11 +220,12 @@ fn create_mesh_data_block(
     buffers: &[BufferData], 
     transform: &Matrix3, 
     mesh_materials: &[gltf::Material], 
-    prop_points_nodes: &[gltf::Node]
+    prop_points_nodes: &[gltf::Node],
+    is_character: bool
 ) -> v3mc::MeshDataBlock {
     v3mc::MeshDataBlock{
         chunks: mesh.primitives().map(|prim| create_mesh_chunk_info(&prim, mesh_materials)).collect(),
-        chunks_data: mesh.primitives().map(|prim| create_mesh_chunk_data(&prim, buffers, transform)).collect(),
+        chunks_data: mesh.primitives().map(|prim| create_mesh_chunk_data(&prim, buffers, transform, is_character)).collect(),
         prop_points: prop_points_nodes.iter().map(|prop| create_prop_point(prop, transform)).collect(),
     }
 }
@@ -335,7 +340,7 @@ fn convert_mesh(
 ) -> std::io::Result<v3mc::Mesh> {
 
     let mesh = node.mesh().unwrap();
-    let flags = v3mc::VIF_MESH_FLAG_FACE_PLANES | if is_character { v3mc::VIF_MESH_FLAG_CHARACTER } else { 0 };
+    let flags = if is_character { v3mc::VIF_MESH_FLAG_CHARACTER } else { v3mc::VIF_MESH_FLAG_FACE_PLANES };
     let num_vecs = count_mesh_vertices(&mesh) as i32;
 
     let materials: Vec<_> = get_mesh_materials(&mesh);
@@ -351,7 +356,7 @@ fn convert_mesh(
     }
 
     let mut data_block_cur = Cursor::new(Vec::<u8>::new());
-    create_mesh_data_block(&mesh, buffers, transform, &materials, prop_point_nodes)
+    create_mesh_data_block(&mesh, buffers, transform, &materials, prop_point_nodes, is_character)
         .write(&mut data_block_cur)?;
     let data_block: Vec::<u8> = data_block_cur.into_inner();
     
