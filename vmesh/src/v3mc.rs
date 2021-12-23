@@ -12,13 +12,18 @@ pub const VERSION: u32 = 0x40000;
 
 // File chunk types
 pub const END_CHUNK: u32       = 0x00000000; // terminating section
-pub const SUBMESH_CHUNK: u32   = 0x5355424D;
-pub const CSPHERE_CHUNK: u32   = 0x43535048;
+pub const SUBMESH_CHUNK: u32   = 0x5355424D; // 'SUBM'
+pub const CSPHERE_CHUNK: u32   = 0x43535048; // 'CSPH'
+pub const BONE_CHUNK: u32      = 0x424F4E45; // 'BONE'
+
+#[allow(unused)]
+pub const MAX_BONES: u32 = 50;
 
 pub struct File {
     pub header: FileHeader,
     pub lod_meshes: Vec<LodMesh>,
     pub cspheres: Vec<ColSphere>,
+    pub bones: Vec<Bone>,
 }
 
 impl File {
@@ -34,6 +39,15 @@ impl File {
         for csphere in &self.cspheres {
             FileChunk::write_new(wrt, CSPHERE_CHUNK, |wrt| {
                 csphere.write(wrt)
+            })?;
+        }
+        if !self.bones.is_empty() {
+            FileChunk::write_new(wrt, BONE_CHUNK, |wrt| {
+                wrt.write_i32::<LittleEndian>(self.bones.len().try_into().expect("number of bones fits in i32"))?;
+                for bone in &self.bones {
+                    bone.write(wrt)?
+                }
+                Ok(())
             })?;
         }
         FileChunk{
@@ -405,6 +419,23 @@ impl ColSphere {
         wrt.write_i32::<LittleEndian>(self.parent_index)?;
         wrt.write_f32_slice_le(&self.pos)?;
         wrt.write_f32::<LittleEndian>(self.radius)?;
+        Ok(())
+    }
+}
+
+pub struct Bone {
+    pub name: String,
+    pub rot: [f32; 4],
+    pub pos: [f32; 3],
+    pub parent: i32,
+}
+
+impl Bone {
+    pub fn write<W: Write>(&self, wrt: &mut W) -> Result<()> {
+        wrt.write_char_array(&self.name, 24)?;
+        wrt.write_f32_slice_le(&self.rot)?;
+        wrt.write_f32_slice_le(&self.pos)?;
+        wrt.write_i32::<LittleEndian>(self.parent)?;
         Ok(())
     }
 }

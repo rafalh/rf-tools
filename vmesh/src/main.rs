@@ -492,6 +492,25 @@ fn convert_csphere(node: &gltf::Node) -> v3mc::ColSphere {
     }
 }
 
+fn get_bone_parent_index(node: &gltf::Node, skin: &gltf::Skin) -> i32 {
+    skin.joints()
+        .enumerate()
+        .find(|(_i, n)| n.children().any(|c| c.index() == node.index()))
+        .map(|(i, _n)| i as i32)
+        .unwrap_or(-1)
+}
+
+fn convert_bones(skin: &gltf::Skin) -> Vec<v3mc::Bone> {
+    skin.joints()
+        .map(|n| v3mc::Bone {
+            name: n.name().unwrap_or_default().to_owned(),
+            pos: n.transform().decomposed().0,
+            rot: n.transform().decomposed().1,
+            parent: get_bone_parent_index(&n, skin)
+        })
+        .collect()
+}
+
 fn make_v3mc_file(doc: &gltf::Document, buffers: &[BufferData], is_character: bool) -> Result<v3mc::File, Box<dyn Error>> {
     let submesh_nodes = get_submesh_nodes(doc);
     let mut lod_meshes = Vec::with_capacity(submesh_nodes.len());
@@ -505,10 +524,14 @@ fn make_v3mc_file(doc: &gltf::Document, buffers: &[BufferData], is_character: bo
         cspheres.push(convert_csphere(n));
     }
 
+    let skin_opt = doc.skins().next();
+    let bones = skin_opt.map(|s| convert_bones(&s)).unwrap_or_default();
+
     Ok(v3mc::File{
         header: create_v3mc_file_header(&lod_meshes, &cspheres, is_character),
         lod_meshes,
         cspheres,
+        bones,
     })
 }
 
