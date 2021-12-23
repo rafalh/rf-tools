@@ -480,8 +480,10 @@ fn convert_lod_mesh(node: &gltf::Node, buffers: &[BufferData]) -> Result<v3mc::L
     })
 }
 
-fn convert_csphere(node: &gltf::Node) -> v3mc::ColSphere {
-    let name = node.name().unwrap_or("csphere");
+fn convert_csphere(node: &gltf::Node, index: usize) -> v3mc::ColSphere {
+    let name = node.name()
+        .map(&str::to_owned)
+        .unwrap_or_else(|| format!("csphere_{}", index));
     let (translation, _rotation, scale) = node.transform().decomposed();
     let radius = scale[0].max(scale[1]).max(scale[2]);
     v3mc::ColSphere{
@@ -490,6 +492,14 @@ fn convert_csphere(node: &gltf::Node) -> v3mc::ColSphere {
         pos: translation,
         radius,
     }
+}
+
+fn convert_cspheres(nodes: &Vec<gltf::Node>) -> Vec<v3mc::ColSphere> {
+    let mut cspheres = Vec::with_capacity(nodes.len());
+    for (i, n) in nodes.iter().enumerate() {
+        cspheres.push(convert_csphere(&n, i));
+    }
+    cspheres
 }
 
 fn get_bone_parent_index(node: &gltf::Node, skin: &gltf::Skin) -> i32 {
@@ -502,11 +512,12 @@ fn get_bone_parent_index(node: &gltf::Node, skin: &gltf::Skin) -> i32 {
 
 fn convert_bones(skin: &gltf::Skin) -> Vec<v3mc::Bone> {
     skin.joints()
-        .map(|n| v3mc::Bone {
-            name: n.name().unwrap_or_default().to_owned(),
-            pos: n.transform().decomposed().0,
-            rot: n.transform().decomposed().1,
-            parent: get_bone_parent_index(&n, skin)
+        .enumerate()
+        .map(|(i, n)| {
+            let name = n.name().map(&str::to_owned).unwrap_or_else(|| format!("bone_{}", i));
+            let (pos, rot, _scale) = n.transform().decomposed();
+            let parent = get_bone_parent_index(&n, skin);
+            v3mc::Bone { name, pos, rot, parent }
         })
         .collect()
 }
@@ -519,10 +530,7 @@ fn make_v3mc_file(doc: &gltf::Document, buffers: &[BufferData], is_character: bo
     }
 
     let csphere_nodes = get_csphere_nodes(doc);
-    let mut cspheres = Vec::with_capacity(csphere_nodes.len());
-    for n in &csphere_nodes {
-        cspheres.push(convert_csphere(n));
-    }
+    let cspheres = convert_cspheres(&csphere_nodes);
 
     let skin_opt = doc.skins().next();
     let bones = skin_opt.map(|s| convert_bones(&s)).unwrap_or_default();
