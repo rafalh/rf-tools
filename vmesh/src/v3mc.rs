@@ -16,8 +16,18 @@ pub const SUBMESH_CHUNK: u32   = 0x5355424D; // 'SUBM'
 pub const CSPHERE_CHUNK: u32   = 0x43535048; // 'CSPH'
 pub const BONE_CHUNK: u32      = 0x424F4E45; // 'BONE'
 
-#[allow(unused)]
 pub const MAX_BONES: usize = 50;
+
+
+// File chunk types
+#[allow(unused)]
+pub const VIF_MESH_FLAG_MORPH: u32 = 0x01;
+pub const VIF_MESH_FLAG_CHARACTER: u32 = 0x02;
+#[allow(unused)]
+pub const VIF_MESH_FLAG_REFLECTION: u32 = 0x04;
+#[allow(unused)]
+pub const VIF_MESH_FLAG_DETAILED_COLLISION: u32 = 0x10;
+pub const VIF_MESH_FLAG_FACE_PLANES: u32 = 0x20;
 
 pub struct File {
     pub header: FileHeader,

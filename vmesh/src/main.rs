@@ -330,11 +330,12 @@ fn convert_mesh(
     buffers: &[BufferData], 
     lod_mesh_materials: &[gltf::Material],
     prop_point_nodes: &[gltf::Node],
-    transform: &Matrix3
+    transform: &Matrix3,
+    is_character: bool
 ) -> std::io::Result<v3mc::Mesh> {
 
     let mesh = node.mesh().unwrap();
-    let flags = 0x20; // 0x1|0x02 - characters, 0x20 - static meshes, 0x10 only driller01.v3m
+    let flags = v3mc::VIF_MESH_FLAG_FACE_PLANES | if is_character { v3mc::VIF_MESH_FLAG_CHARACTER } else { 0 };
     let num_vecs = count_mesh_vertices(&mesh) as i32;
 
     let materials: Vec<_> = get_mesh_materials(&mesh);
@@ -419,7 +420,7 @@ struct NodeExtras {
     lod_distance: Option<f32>,
 }
 
-fn convert_lod_mesh(node: &gltf::Node, buffers: &[BufferData]) -> Result<v3mc::LodMesh, Box<dyn Error>> {
+fn convert_lod_mesh(node: &gltf::Node, buffers: &[BufferData], is_character: bool) -> Result<v3mc::LodMesh, Box<dyn Error>> {
     let node_transform = node.transform().matrix();
     let mesh = node.mesh().unwrap();
 
@@ -463,7 +464,7 @@ fn convert_lod_mesh(node: &gltf::Node, buffers: &[BufferData]) -> Result<v3mc::L
 
     let mut meshes: Vec<_> = Vec::with_capacity(child_node_dist_vec.len());
     for (n, _) in &child_node_dist_vec {
-        meshes.push(convert_mesh(n, buffers, &gltf_materials, &prop_point_nodes, &rot_scale_mat)?);
+        meshes.push(convert_mesh(n, buffers, &gltf_materials, &prop_point_nodes, &rot_scale_mat, is_character)?);
     }
 
     Ok(v3mc::LodMesh{
@@ -531,7 +532,7 @@ fn make_v3mc_file(doc: &gltf::Document, buffers: &[BufferData], is_character: bo
     let submesh_nodes = get_submesh_nodes(doc);
     let mut lod_meshes = Vec::with_capacity(submesh_nodes.len());
     for n in &submesh_nodes {
-        lod_meshes.push(convert_lod_mesh(n, buffers)?);
+        lod_meshes.push(convert_lod_mesh(n, buffers, is_character)?);
     }
 
     let csphere_nodes = get_csphere_nodes(doc);
