@@ -5,7 +5,6 @@ use crate::io_utils::WriteExt;
 
 // File signatures
 pub const V3M_SIGNATURE: u32 = 0x52463344; // RF3D
-#[allow(unused)]
 pub const V3C_SIGNATURE: u32 = 0x5246434D; // RFCM
 
 // Supported format version

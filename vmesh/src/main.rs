@@ -48,9 +48,9 @@ fn get_material_self_illumination(mat: &gltf::Material) -> f32 {
     mat.emissive_factor().iter().cloned().fold(0f32, f32::max)
 }
 
-fn create_v3m_file_header(lod_meshes: &[v3mc::LodMesh], cspheres: &[v3mc::ColSphere]) -> v3mc::FileHeader {
+fn create_v3mc_file_header(lod_meshes: &[v3mc::LodMesh], cspheres: &[v3mc::ColSphere], is_character: bool) -> v3mc::FileHeader {
     v3mc::FileHeader {
-        signature: v3mc::V3M_SIGNATURE,
+        signature: if is_character { v3mc::V3C_SIGNATURE } else { v3mc::V3M_SIGNATURE },
         version: v3mc::VERSION,
         num_lod_meshes: lod_meshes.len() as i32,
         num_all_materials: lod_meshes.iter().map(|lm| lm.materials.len()).sum::<usize>() as i32,
@@ -492,7 +492,7 @@ fn convert_csphere(node: &gltf::Node) -> v3mc::ColSphere {
     }
 }
 
-fn make_v3m_file(doc: &gltf::Document, buffers: &[BufferData]) -> Result<v3mc::File, Box<dyn Error>> {
+fn make_v3mc_file(doc: &gltf::Document, buffers: &[BufferData], is_character: bool) -> Result<v3mc::File, Box<dyn Error>> {
     let submesh_nodes = get_submesh_nodes(doc);
     let mut lod_meshes = Vec::with_capacity(submesh_nodes.len());
     for n in &submesh_nodes {
@@ -506,13 +506,24 @@ fn make_v3m_file(doc: &gltf::Document, buffers: &[BufferData]) -> Result<v3mc::F
     }
 
     Ok(v3mc::File{
-        header: create_v3m_file_header(&lod_meshes, &cspheres),
+        header: create_v3mc_file_header(&lod_meshes, &cspheres, is_character),
         lod_meshes,
         cspheres,
     })
 }
 
-fn convert_gltf_to_v3m(input_file_name: &str, output_file_name: &str) -> Result<(), Box<dyn Error>> {
+fn generate_output_file_name(input_file_name: &str, output_file_name_opt: Option<&str>, is_character: bool) -> String {
+    output_file_name_opt
+        .map(|s| s.to_owned())
+        .unwrap_or_else(|| {
+            let base_file_name = input_file_name.strip_suffix(".gltf")
+            .unwrap_or_else(|| input_file_name.strip_suffix(".glb").unwrap_or(&input_file_name));
+            let ext = if is_character { "v3c" } else { "v3m" };
+            format!("{}.{}", base_file_name, ext)
+        })
+}
+
+fn convert_gltf_to_v3mc(input_file_name: &str, output_file_name_opt: Option<&str>) -> Result<(), Box<dyn Error>> {
     println!("Importing GLTF file {}...", input_file_name);
     let input_path = Path::new(input_file_name);
     let gltf = gltf::Gltf::open(input_path)?;
@@ -522,7 +533,9 @@ fn convert_gltf_to_v3m(input_file_name: &str, output_file_name: &str) -> Result<
     let buffers = import::import_buffer_data(&document, input_path.parent(), blob)?;
     
     println!("Converting...");
-    let v3m = make_v3m_file(&document, &buffers)?;
+    let is_character = document.skins().next().is_some();
+    let output_file_name = generate_output_file_name(input_file_name, output_file_name_opt, is_character);
+    let v3m = make_v3mc_file(&document, &buffers, is_character)?;
     let file = File::create(output_file_name)?;
     let mut wrt = BufWriter::new(file);
     v3m.write(&mut wrt)?;
@@ -542,13 +555,9 @@ fn main() {
     }
 
     let input_file_name = args.next().unwrap();
-    let output_file_name = args.next().unwrap_or_else(|| {
-        let base_file_name = input_file_name.strip_suffix(".gltf")
-            .unwrap_or_else(|| input_file_name.strip_suffix(".glb").unwrap_or(&input_file_name));
-        format!("{}.v3m", base_file_name)
-    });
+    let output_file_name = args.next();
 
-    if let Err(e) = convert_gltf_to_v3m(&input_file_name, &output_file_name) {
+    if let Err(e) = convert_gltf_to_v3mc(&input_file_name, output_file_name.as_deref()) {
         eprintln!("Error: {}", e);
         std::process::exit(1);
     }
