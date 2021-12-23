@@ -493,17 +493,17 @@ fn convert_csphere(node: &gltf::Node, index: usize) -> v3mc::ColSphere {
     let (translation, _rotation, scale) = node.transform().decomposed();
     let radius = scale[0].max(scale[1]).max(scale[2]);
     v3mc::ColSphere{
-        name: name.to_string(),
+        name,
         parent_index: -1,
         pos: translation,
         radius,
     }
 }
 
-fn convert_cspheres(nodes: &Vec<gltf::Node>) -> Vec<v3mc::ColSphere> {
+fn convert_cspheres(nodes: &[gltf::Node]) -> Vec<v3mc::ColSphere> {
     let mut cspheres = Vec::with_capacity(nodes.len());
     for (i, n) in nodes.iter().enumerate() {
-        cspheres.push(convert_csphere(&n, i));
+        cspheres.push(convert_csphere(n, i));
     }
     cspheres
 }
@@ -526,7 +526,7 @@ fn convert_bones(skin: &gltf::Skin) -> std::io::Result<Vec<v3mc::Bone>> {
     for (i, n) in joints.iter().enumerate() {
         let name = n.name().map(&str::to_owned).unwrap_or_else(|| format!("bone_{}", i));
         let (pos, rot, _scale) = n.transform().decomposed();
-        let parent = get_bone_parent_index(&n, skin);
+        let parent = get_bone_parent_index(n, skin);
         let bone = v3mc::Bone { name, pos, rot, parent };
         bones.push(bone);
     }
@@ -562,7 +562,7 @@ fn generate_output_file_name(input_file_name: &str, output_file_name_opt: Option
         .map(|s| s.to_owned())
         .unwrap_or_else(|| {
             let base_file_name = input_file_name.strip_suffix(".gltf")
-            .unwrap_or_else(|| input_file_name.strip_suffix(".glb").unwrap_or(&input_file_name));
+            .unwrap_or_else(|| input_file_name.strip_suffix(".glb").unwrap_or(input_file_name));
             let ext = if is_character { "v3c" } else { "v3m" };
             format!("{}.{}", base_file_name, ext)
         })
