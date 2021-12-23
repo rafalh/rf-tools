@@ -510,16 +510,21 @@ fn get_bone_parent_index(node: &gltf::Node, skin: &gltf::Skin) -> i32 {
         .unwrap_or(-1)
 }
 
-fn convert_bones(skin: &gltf::Skin) -> Vec<v3mc::Bone> {
-    skin.joints()
-        .enumerate()
-        .map(|(i, n)| {
-            let name = n.name().map(&str::to_owned).unwrap_or_else(|| format!("bone_{}", i));
-            let (pos, rot, _scale) = n.transform().decomposed();
-            let parent = get_bone_parent_index(&n, skin);
-            v3mc::Bone { name, pos, rot, parent }
-        })
-        .collect()
+fn convert_bones(skin: &gltf::Skin) -> std::io::Result<Vec<v3mc::Bone>> {
+    let joints: Vec<_> = skin.joints().collect();
+    if joints.len() > v3mc::MAX_BONES {
+        let err_msg = format!("too many bones: found {} but only {} are supported", joints.len(), v3mc::MAX_BONES);
+        return Err(new_custom_error(err_msg));
+    }
+    let mut bones = Vec::with_capacity(joints.len());
+    for (i, n) in joints.iter().enumerate() {
+        let name = n.name().map(&str::to_owned).unwrap_or_else(|| format!("bone_{}", i));
+        let (pos, rot, _scale) = n.transform().decomposed();
+        let parent = get_bone_parent_index(&n, skin);
+        let bone = v3mc::Bone { name, pos, rot, parent };
+        bones.push(bone);
+    }
+    Ok(bones)
 }
 
 fn make_v3mc_file(doc: &gltf::Document, buffers: &[BufferData], is_character: bool) -> Result<v3mc::File, Box<dyn Error>> {
@@ -532,8 +537,11 @@ fn make_v3mc_file(doc: &gltf::Document, buffers: &[BufferData], is_character: bo
     let csphere_nodes = get_csphere_nodes(doc);
     let cspheres = convert_cspheres(&csphere_nodes);
 
-    let skin_opt = doc.skins().next();
-    let bones = skin_opt.map(|s| convert_bones(&s)).unwrap_or_default();
+    let bones = if let Some(skin) = doc.skins().next() {
+        convert_bones(&skin)?
+    } else {
+        Vec::new()
+    };
 
     Ok(v3mc::File{
         header: create_v3mc_file_header(&lod_meshes, &cspheres, is_character),

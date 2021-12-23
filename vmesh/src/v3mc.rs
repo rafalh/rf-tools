@@ -17,7 +17,7 @@ pub const CSPHERE_CHUNK: u32   = 0x43535048; // 'CSPH'
 pub const BONE_CHUNK: u32      = 0x424F4E45; // 'BONE'
 
 #[allow(unused)]
-pub const MAX_BONES: u32 = 50;
+pub const MAX_BONES: usize = 50;
 
 pub struct File {
     pub header: FileHeader,
