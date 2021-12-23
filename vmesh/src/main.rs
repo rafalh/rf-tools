@@ -176,7 +176,19 @@ fn create_mesh_chunk_data(prim: &gltf::Primitive, buffers: &[BufferData],
         .collect();
 
     let same_pos_vertex_offsets: Vec<i16> = (0..nv).map(|_| 0).collect();
-    let wis: Vec<_> = (0..nv).map(|_| v3mc::WeightIndexArray::default()).collect();
+    
+    let wis: Vec<_> = if let Some(joints) = reader.read_joints(0) {
+        joints.into_u16()
+            .zip(reader.read_weights(0).expect("weights").into_u8())
+            .map(|(indices_u16, weights)| {
+                let indices = indices_u16
+                    .map(|x| x.try_into().expect("joint index fits in u8"));
+                v3mc::WeightIndexArray { indices, weights }
+            })
+            .collect()
+    } else {
+        (0..nv).map(|_| v3mc::WeightIndexArray::default()).collect()
+    };
 
     v3mc::MeshChunkData{
         vecs,
