@@ -53,7 +53,7 @@ impl File {
         }
         if !self.bones.is_empty() {
             FileChunk::write_new(wrt, BONE_CHUNK, |wrt| {
-                wrt.write_i32::<LittleEndian>(self.bones.len().try_into().expect("number of bones fits in i32"))?;
+                wrt.write_i32::<LittleEndian>(self.bones.len().try_into().expect("number of bones should fit in i32"))?;
                 for bone in &self.bones {
                     bone.write(wrt)?
                 }

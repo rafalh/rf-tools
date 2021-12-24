@@ -132,7 +132,7 @@ fn create_mesh_chunk_info(prim: &gltf::Primitive, materials: &[gltf::Material]) 
     let prim_mat = prim.material();
     let texture_index = materials.iter()
         .position(|m| m.index() == prim_mat.index())
-        .expect("find texture") as i32;
+        .expect("cannot find texture") as i32;
 
     v3mc::MeshDataBlockChunkInfo{
         texture_index,
@@ -183,10 +183,10 @@ fn create_mesh_chunk_data(prim: &gltf::Primitive, buffers: &[BufferData],
     
     let wis: Vec<_> = if let Some(joints) = reader.read_joints(0) {
         joints.into_u16()
-            .zip(reader.read_weights(0).expect("weights").into_u8())
+            .zip(reader.read_weights(0).expect("mesh has no weights").into_u8())
             .map(|(indices_u16, weights)| {
                 let indices = indices_u16
-                    .map(|x| x.try_into().expect("joint index fits in u8"));
+                    .map(|x| x.try_into().expect("joint index should fit in u8"));
                 v3mc::WeightIndexArray { indices, weights }
             })
             .collect()
@@ -208,7 +208,7 @@ fn create_mesh_chunk_data(prim: &gltf::Primitive, buffers: &[BufferData],
 fn create_prop_point(node: &gltf::Node, transform: &Matrix3) -> v3mc::PropPoint {
     let (translation, rotation, _scale) = node.transform().decomposed();
     v3mc::PropPoint{
-        name: node.name().expect("prop point name").to_string(),
+        name: node.name().expect("prop point name is missing").to_string(),
         orient: rotation,
         pos: transform_point(&translation, transform),
         parent_index: -1,
@@ -351,7 +351,6 @@ fn convert_mesh(
 
     let mut chunks = Vec::new();
     for prim in mesh.primitives() {
-        println!("Processing mesh {} in node {}", mesh.index(), node.index());
         chunks.push(create_mesh_chunk(&prim)?);
     }
 
@@ -425,10 +424,7 @@ struct NodeExtras {
     lod_distance: Option<f32>,
 }
 
-fn convert_lod_mesh(node: &gltf::Node, buffers: &[BufferData], is_character: bool) -> Result<v3mc::LodMesh, Box<dyn Error>> {
-    let node_transform = node.transform().matrix();
-    let mesh = node.mesh().unwrap();
-
+fn find_lod_nodes<'a>(node: &'a gltf::Node) -> Vec<(gltf::Node<'a>, f32)> {
     let mut child_node_dist_vec: Vec<(gltf::Node, f32)> = node.children()
         .filter(|n| n.mesh().is_some())
         .map(|n| {
@@ -446,10 +442,18 @@ fn convert_lod_mesh(node: &gltf::Node, buffers: &[BufferData], is_character: boo
         .chain(iter::once((node.clone(), 0f32)))
         .collect();
     child_node_dist_vec.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap());
+    child_node_dist_vec
+}
 
+fn convert_lod_mesh(node: &gltf::Node, buffers: &[BufferData], is_character: bool) -> Result<v3mc::LodMesh, Box<dyn Error>> {
+    let node_transform = node.transform().matrix();
+    let mesh = node.mesh().unwrap();
     let name = node.name().unwrap_or("Default").to_string();
+    println!("Processing top-level node {} ({})", node.index(), name);
+
     let parent_name = "None".to_string();
     let version = v3mc::MeshDataBlock::VERSION;
+    let child_node_dist_vec = find_lod_nodes(node);
     let distances = child_node_dist_vec.iter().map(|(_, dist)| *dist).collect();
     let (origin, rot_scale_mat) = extract_translation_from_matrix(&node_transform);
 
@@ -468,7 +472,8 @@ fn convert_lod_mesh(node: &gltf::Node, buffers: &[BufferData], is_character: boo
     let materials: Vec<_> = gltf_materials.iter().map(convert_material).collect();
 
     let mut meshes: Vec<_> = Vec::with_capacity(child_node_dist_vec.len());
-    for (n, _) in &child_node_dist_vec {
+    for (n, d) in &child_node_dist_vec {
+        println!("Processing node {} name {} distance {}", n.index(), n.name().unwrap_or("<unnamed>"), d);
         meshes.push(convert_mesh(n, buffers, &gltf_materials, &prop_point_nodes, &rot_scale_mat, is_character)?);
     }
 
@@ -535,6 +540,7 @@ fn convert_bones(skin: &gltf::Skin) -> std::io::Result<Vec<v3mc::Bone>> {
 
 fn make_v3mc_file(doc: &gltf::Document, buffers: &[BufferData], is_character: bool) -> Result<v3mc::File, Box<dyn Error>> {
     let submesh_nodes = get_submesh_nodes(doc);
+    println!("Found {} top-level mesh nodes", submesh_nodes.len());
     let mut lod_meshes = Vec::with_capacity(submesh_nodes.len());
     for n in &submesh_nodes {
         lod_meshes.push(convert_lod_mesh(n, buffers, is_character)?);
