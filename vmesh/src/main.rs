@@ -375,10 +375,7 @@ fn convert_mesh(
 }
 
 fn change_texture_ext_to_tga(name: &str) -> String {
-    let dot_offset = name.find('.').unwrap_or_else(|| name.len());
-    let mut owned = name.to_owned();
-    owned.replace_range(dot_offset.., ".tga");
-    owned
+    String::from(Path::new(name).with_extension("tga").file_name().unwrap().to_string_lossy())
 }
 
 fn get_material_base_color_texture_name(material: &gltf::material::Material) -> String {
