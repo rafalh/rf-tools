@@ -2,6 +2,7 @@ mod import;
 mod io_utils;
 mod math_utils;
 mod v3mc;
+mod rfa;
 
 use std::io::Cursor;
 use std::fs::File;
@@ -571,6 +572,98 @@ fn generate_output_file_name(input_file_name: &str, output_file_name_opt: Option
         })
 }
 
+fn time_to_frame_num(time_sec: f32) -> i32 {
+    (time_sec * 30.0f32 * 160.0f32) as i32
+}
+
+
+fn make_rfa(anim: &gltf::Animation, skin: &gltf::Skin, buffers: &[BufferData]) -> rfa::File {
+    let mut start_time = 0;
+    let mut end_time = 0;
+
+    let mut bones = Vec::with_capacity(skin.joints().count());
+    for n in skin.joints() {
+        use gltf::animation::Property;
+        use gltf::animation::util::ReadOutputs;
+        use gltf::animation::Interpolation;
+        let rotation_channel_opt = anim.channels()
+            .filter(|c| c.target().node().index() == n.index() && c.target().property() == Property::Rotation)
+            .next();
+        let rotation_keys = if let Some(rotation_channel) = rotation_channel_opt {
+            assert!(rotation_channel.sampler().interpolation() == Interpolation::Linear);
+            let reader = rotation_channel.reader(|buffer| Some(&buffers[buffer.index()]));
+            let inputs = reader.read_inputs().expect("expected animation channel inputs");
+            let rotations = match reader.read_outputs().expect("expected animation channel outputs") {
+                ReadOutputs::Rotations(r) => r,
+                _ => panic!("invalid type"),
+            }.into_i16().map(|r| r.map(|x| x / 2));
+            let times = inputs.map(time_to_frame_num).collect::<Vec<_>>();
+            start_time = start_time.min(times.iter().copied().min().unwrap_or_default());
+            end_time = end_time.max(times.iter().copied().max().unwrap_or_default());
+            times.iter().zip(rotations).map(|(t, r)| rfa::RotationKey {
+                time: *t,
+                rotation: r,
+                ease_in: 0,
+                ease_out: 0,
+            }).collect()
+        } else {
+            Vec::new()
+        };
+        let translation_channel_opt = anim.channels()
+            .filter(|c| c.target().node().index() == n.index() && c.target().property() == Property::Translation)
+            .next();
+        let translation_keys = if let Some(translation_channel) = translation_channel_opt {
+            assert!(translation_channel.sampler().interpolation() == Interpolation::Linear);
+            let reader = translation_channel.reader(|buffer| Some(&buffers[buffer.index()]));
+            let inputs = reader.read_inputs().expect("expected animation channel inputs");
+            let translations = match reader.read_outputs().expect("expected animation channel outputs") {
+                ReadOutputs::Translations(r) => r,
+                _ => panic!("invalid type"),
+            };
+            let times = inputs.map(time_to_frame_num).collect::<Vec<_>>();
+            start_time = start_time.min(times.iter().copied().min().unwrap_or_default());
+            end_time = end_time.max(times.iter().copied().max().unwrap_or_default());
+            times.iter().zip(translations).map(|(t, p)| rfa::TranslationKey {
+                time: *t,
+                translation: p,
+                in_tangent: p,
+                out_tangent: p,
+            }).collect()
+        } else {
+            Vec::new()
+        };
+        bones.push(rfa::Bone {
+            weight: 1.0f32,
+            rotation_keys,
+            translation_keys,
+        });
+    }
+    let header = rfa::FileHeader {
+        num_bones: bones.len() as i32,
+        start_time,
+        end_time,
+        ramp_in_time: 480,
+        ramp_out_time: 480,
+        total_rotation: [0.0f32, 0.0f32, 0.0f32, 1.0f32],
+        total_translation: [0.0f32, 0.0f32, 0.0f32],
+        ..rfa::FileHeader::default()
+    };
+    rfa::File {
+        header,
+        bones,
+    }
+}
+
+fn convert_animation(anim: &gltf::Animation, index: usize, skin: &gltf::Skin, buffers: &[BufferData], output_dir: &Path) -> std::io::Result<()> {
+    let name = anim.name().map(&str::to_owned).unwrap_or_else(|| format!("anim_{}", index));
+    println!("Processing animation {}", name);
+    let file_name = output_dir.join(format!("{}.rfa", name));
+    let mut wrt = BufWriter::new(File::create(file_name)?);
+    let rfa = make_rfa(anim, skin, buffers);
+    rfa.write(&mut wrt)?;
+    Ok(())
+}
+
 fn convert_gltf_to_v3mc(input_file_name: &str, output_file_name_opt: Option<&str>) -> Result<(), Box<dyn Error>> {
     println!("Importing GLTF file {}...", input_file_name);
     let input_path = Path::new(input_file_name);
@@ -581,13 +674,21 @@ fn convert_gltf_to_v3mc(input_file_name: &str, output_file_name_opt: Option<&str
     let buffers = import::import_buffer_data(&document, input_path.parent(), blob)?;
     
     println!("Converting...");
-    let is_character = document.skins().next().is_some();
+    let skin_opt = document.skins().next();
+    let is_character = skin_opt.is_some();
     let output_file_name = generate_output_file_name(input_file_name, output_file_name_opt, is_character);
     let v3m = make_v3mc_file(&document, &buffers, is_character)?;
-    let file = File::create(output_file_name)?;
+    let file = File::create(&output_file_name)?;
     let mut wrt = BufWriter::new(file);
     v3m.write(&mut wrt)?;
-    
+
+    let output_dir = Path::new(&output_file_name).parent().unwrap();
+    if let Some(skin) = skin_opt {
+        for (i, anim) in document.animations().enumerate() {
+            convert_animation(&anim, i, &skin, &buffers, output_dir)?;
+        }
+    }
+
     println!("Converted successfully.");
     Ok(())
 }

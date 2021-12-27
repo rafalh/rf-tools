@@ -1,10 +1,24 @@
 use std::io::Write;
-use byteorder::{LittleEndian, WriteBytesExt};
+use byteorder::{ByteOrder, LittleEndian, WriteBytesExt};
 
 pub(crate) trait WriteExt: Write {
     fn write_f32_slice_le(&mut self, slice: &[f32]) -> std::io::Result<()> {
         for val in slice {
             self.write_f32::<LittleEndian>(*val)?;
+        }
+        Ok(())
+    }
+
+    fn write_f32_slice<T: ByteOrder>(&mut self, slice: &[f32]) -> std::io::Result<()> {
+        for val in slice {
+            self.write_f32::<T>(*val)?;
+        }
+        Ok(())
+    }
+
+    fn write_i16_slice<T: ByteOrder>(&mut self, slice: &[i16]) -> std::io::Result<()> {
+        for val in slice {
+            self.write_i16::<T>(*val)?;
         }
         Ok(())
     }
