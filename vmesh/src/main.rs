@@ -511,12 +511,27 @@ fn convert_cspheres(nodes: &[gltf::Node]) -> Vec<v3mc::ColSphere> {
     cspheres
 }
 
-fn get_bone_parent_index(node: &gltf::Node, skin: &gltf::Skin) -> i32 {
-    skin.joints()
-        .enumerate()
-        .find(|(_i, n)| n.children().any(|c| c.index() == node.index()))
-        .map(|(i, _n)| i as i32)
-        .unwrap_or(-1)
+fn get_joint_index(node: &gltf::Node, skin: &gltf::Skin) -> usize {
+    skin.joints().enumerate()
+        .filter(|(_i, n)| node.index() == n.index())
+        .map(|(i, _n)| i)
+        .next()
+        .expect("joint not found")
+}
+
+fn get_joint_parent<'a>(node: &gltf::Node, skin: &gltf::Skin<'a>) -> Option<gltf::Node<'a>> {
+    skin.joints().find(|n| n.children().any(|c| c.index() == node.index()))
+}
+
+fn get_joint_global_transform(node: &gltf::Node, skin: &gltf::Skin) -> glam::Mat4 {
+    let local_transform = glam::Mat4::from_cols_array_2d(&node.transform().matrix());
+    let parent_node_opt = get_joint_parent(node, skin);
+    if let Some(parent_node) = parent_node_opt {
+        let parent_transform = get_joint_global_transform(&parent_node, skin);
+        parent_transform * local_transform
+    } else {
+        local_transform
+    }
 }
 
 fn convert_bones(skin: &gltf::Skin) -> std::io::Result<Vec<v3mc::Bone>> {
@@ -525,12 +540,18 @@ fn convert_bones(skin: &gltf::Skin) -> std::io::Result<Vec<v3mc::Bone>> {
         let err_msg = format!("too many bones: found {} but only {} are supported", joints.len(), v3mc::MAX_BONES);
         return Err(new_custom_error(err_msg));
     }
+
     let mut bones = Vec::with_capacity(joints.len());
     for (i, n) in joints.iter().enumerate() {
         let name = n.name().map(&str::to_owned).unwrap_or_else(|| format!("bone_{}", i));
-        let (pos, rot, _scale) = n.transform().decomposed();
-        let parent = get_bone_parent_index(n, skin);
-        let bone = v3mc::Bone { name, pos, rot, parent };
+        let parent = get_joint_parent(n, skin);
+        let parent_index = parent.map(|pn| get_joint_index(&pn, skin) as i32).unwrap_or(-1);
+        let transform = get_joint_global_transform(n, skin);
+        let inv_transform = transform.inverse();
+        let (_scale, rotation, translation) = inv_transform.to_scale_rotation_translation();
+        let pos = translation.to_array();
+        let rot = [rotation.x, rotation.y, rotation.z, rotation.w];
+        let bone = v3mc::Bone { name, pos, rot, parent: parent_index };
         bones.push(bone);
     }
     Ok(bones)
@@ -576,7 +597,6 @@ fn time_to_frame_num(time_sec: f32) -> i32 {
     (time_sec * 30.0f32 * 160.0f32) as i32
 }
 
-
 fn make_rfa(anim: &gltf::Animation, skin: &gltf::Skin, buffers: &[BufferData]) -> rfa::File {
     let mut start_time = 0;
     let mut end_time = 0;
@@ -590,7 +610,8 @@ fn make_rfa(anim: &gltf::Animation, skin: &gltf::Skin, buffers: &[BufferData]) -
             .filter(|c| c.target().node().index() == n.index() && c.target().property() == Property::Rotation)
             .next();
         let rotation_keys = if let Some(rotation_channel) = rotation_channel_opt {
-            assert!(rotation_channel.sampler().interpolation() == Interpolation::Linear);
+            let interpolation = rotation_channel.sampler().interpolation();
+            assert!(interpolation == Interpolation::Linear || interpolation == Interpolation::Step);
             let reader = rotation_channel.reader(|buffer| Some(&buffers[buffer.index()]));
             let inputs = reader.read_inputs().expect("expected animation channel inputs");
             let rotations = match reader.read_outputs().expect("expected animation channel outputs") {
@@ -613,7 +634,8 @@ fn make_rfa(anim: &gltf::Animation, skin: &gltf::Skin, buffers: &[BufferData]) -
             .filter(|c| c.target().node().index() == n.index() && c.target().property() == Property::Translation)
             .next();
         let translation_keys = if let Some(translation_channel) = translation_channel_opt {
-            assert!(translation_channel.sampler().interpolation() == Interpolation::Linear);
+            let interpolation = translation_channel.sampler().interpolation();
+            assert!(interpolation == Interpolation::Linear || interpolation == Interpolation::Step);
             let reader = translation_channel.reader(|buffer| Some(&buffers[buffer.index()]));
             let inputs = reader.read_inputs().expect("expected animation channel inputs");
             let translations = match reader.read_outputs().expect("expected animation channel outputs") {
