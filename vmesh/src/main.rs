@@ -19,6 +19,23 @@ use import::BufferData;
 use io_utils::new_custom_error;
 use math_utils::*;
 
+// glTF defines -X as right, RF defines +X as right
+// Both glTF and RF defines +Y as up, +Z as forward
+// const GLTF_TO_RF_COORDS: glam::Mat4 = glam::const_mat4!(
+//     [-1.0, 0.0, 0.0, 0.0],
+//     [0.0, 1.0, 0.0, 0.0],
+//     [0.0, 0.0, 1.0, 0.0],
+//     [0.0, 0.0, 0.0, 1.0]
+// );
+
+fn gltf_to_rf_pos(pos: &[f32; 3]) -> [f32; 3] {
+    [-pos[0], pos[1], pos[2]]
+}
+
+fn gltf_to_rf_orient(quat: &[f32; 4]) -> [f32; 4] {
+    [-quat[0], -quat[1], -quat[2], quat[3]]
+}
+
 fn build_child_nodes_indices(doc: &gltf::Document) -> Vec<usize> {
     let mut child_indices: Vec<usize> = doc.nodes().flat_map(|n| n.children().map(|n| n.index())).collect();
     child_indices.dedup();
@@ -147,11 +164,11 @@ fn create_mesh_chunk_data(prim: &gltf::Primitive, buffers: &[BufferData],
 
     let vecs: Vec<_> = reader.read_positions()
         .expect("mesh has no positions")
-        .map(|pos| transform_point(&pos, transform))
+        .map(|pos| gltf_to_rf_pos(&transform_point(&pos, transform)))
         .collect();
     let norms: Vec<_> = reader.read_normals()
         .expect("mesh has no normals")
-        .map(|norm| transform_normal(&norm, transform))
+        .map(|norm| gltf_to_rf_pos(&transform_normal(&norm, transform)))
         .collect();
     let uvs: Vec<_> = reader.read_tex_coords(0)
         .map(|iter| iter.into_f32().collect())
@@ -206,12 +223,18 @@ fn create_mesh_chunk_data(prim: &gltf::Primitive, buffers: &[BufferData],
     }
 }
 
+fn quat_to_array(q: &glam::Quat) -> [f32; 4] {
+    [q.x, q.y, q.z, q.w]
+}
+
 fn create_prop_point(node: &gltf::Node, transform: &Matrix3) -> v3mc::PropPoint {
-    let (translation, rotation, _scale) = node.transform().decomposed();
+    let node_transform = glam::Mat4::from_cols_array_2d(&node.transform().matrix());
+    let (_scale, rotation, translation) = node_transform.to_scale_rotation_translation();
+    //let (translation, rotation, _scale) = node.transform().decomposed();
     v3mc::PropPoint{
         name: node.name().expect("prop point name is missing").to_string(),
-        orient: rotation,
-        pos: transform_point(&translation, transform),
+        orient: gltf_to_rf_orient(&quat_to_array(&rotation)),
+        pos: gltf_to_rf_pos(&transform_point(&translation.to_array(), transform)),
         parent_index: -1,
     }
 }
@@ -444,7 +467,8 @@ fn find_lod_nodes<'a>(node: &'a gltf::Node) -> Vec<(gltf::Node<'a>, f32)> {
 }
 
 fn convert_lod_mesh(node: &gltf::Node, buffers: &[BufferData], is_character: bool) -> Result<v3mc::LodMesh, Box<dyn Error>> {
-    let node_transform = node.transform().matrix();
+    let node_transform = glam::Mat4::from_cols_array_2d(&node.transform().matrix()).to_cols_array_2d();
+
     let mesh = node.mesh().unwrap();
     let name = node.name().unwrap_or("Default").to_string();
     println!("Processing top-level node {} ({})", node.index(), name);
@@ -456,9 +480,12 @@ fn convert_lod_mesh(node: &gltf::Node, buffers: &[BufferData], is_character: boo
     let (origin, rot_scale_mat) = extract_translation_from_matrix(&node_transform);
 
     let bbox = compute_mesh_bbox(&mesh, buffers, &rot_scale_mat);
-    let (bbox_min, bbox_max) = (bbox.min, bbox.max);
+    let (bbox_min, bbox_max) = (
+        gltf_to_rf_pos(&bbox.min),
+        gltf_to_rf_pos(&bbox.max),
+    );
 
-    let offset = origin;
+    let offset = gltf_to_rf_pos(&origin);
     let radius = compute_mesh_bounding_sphere_radius(&mesh, buffers, &rot_scale_mat);
 
     let prop_point_nodes: Vec<_> = get_prop_point_nodes(node).collect();
@@ -493,12 +520,13 @@ fn convert_csphere(node: &gltf::Node, index: usize) -> v3mc::ColSphere {
     let name = node.name()
         .map(&str::to_owned)
         .unwrap_or_else(|| format!("csphere_{}", index));
-    let (translation, _rotation, scale) = node.transform().decomposed();
-    let radius = scale[0].max(scale[1]).max(scale[2]);
+    let transform = glam::Mat4::from_cols_array_2d(&node.transform().matrix());
+    let (scale, _rotation, translation) = transform.to_scale_rotation_translation();
+    let radius = scale.max_element();
     v3mc::ColSphere{
         name,
         parent_index: -1,
-        pos: translation,
+        pos: gltf_to_rf_pos(&translation.to_array()),
         radius,
     }
 }
@@ -524,6 +552,8 @@ fn get_joint_parent<'a>(node: &gltf::Node, skin: &gltf::Skin<'a>) -> Option<gltf
 }
 
 fn get_joint_global_transform(node: &gltf::Node, skin: &gltf::Skin) -> glam::Mat4 {
+    //let (translation, rotation, scale) = node.transform().decomposed();
+
     let local_transform = glam::Mat4::from_cols_array_2d(&node.transform().matrix());
     let parent_node_opt = get_joint_parent(node, skin);
     if let Some(parent_node) = parent_node_opt {
@@ -544,14 +574,18 @@ fn convert_bones(skin: &gltf::Skin) -> std::io::Result<Vec<v3mc::Bone>> {
     let mut bones = Vec::with_capacity(joints.len());
     for (i, n) in joints.iter().enumerate() {
         let name = n.name().map(&str::to_owned).unwrap_or_else(|| format!("bone_{}", i));
-        let parent = get_joint_parent(n, skin);
-        let parent_index = parent.map(|pn| get_joint_index(&pn, skin) as i32).unwrap_or(-1);
+        let parent_node_opt = get_joint_parent(n, skin);
+        let parent_index = parent_node_opt
+            .map(|pn| get_joint_index(&pn, skin) as i32)
+            .unwrap_or(-1);
         let transform = get_joint_global_transform(n, skin);
         let inv_transform = transform.inverse();
         let (_scale, rotation, translation) = inv_transform.to_scale_rotation_translation();
         let pos = translation.to_array();
-        let rot = [rotation.x, rotation.y, rotation.z, rotation.w];
-        let bone = v3mc::Bone { name, pos, rot, parent: parent_index };
+        let pos2 = gltf_to_rf_pos(&pos);
+        let rot = quat_to_array(&rotation);
+        let rot2 = gltf_to_rf_orient(&rot);
+        let bone = v3mc::Bone { name, pos: pos2, rot: rot2, parent: parent_index };
         bones.push(bone);
     }
     Ok(bones)
@@ -617,13 +651,13 @@ fn make_rfa(anim: &gltf::Animation, skin: &gltf::Skin, buffers: &[BufferData]) -
             let rotations = match reader.read_outputs().expect("expected animation channel outputs") {
                 ReadOutputs::Rotations(r) => r,
                 _ => panic!("invalid type"),
-            }.into_i16().map(|r| r.map(|x| x / 2));
+            }.into_f32();
             let times = inputs.map(time_to_frame_num).collect::<Vec<_>>();
             start_time = start_time.min(times.iter().copied().min().unwrap_or_default());
             end_time = end_time.max(times.iter().copied().max().unwrap_or_default());
             times.iter().zip(rotations).map(|(t, r)| rfa::RotationKey {
                 time: *t,
-                rotation: r,
+                rotation: gltf_to_rf_orient(&r).map(|x| (x * 16383.0f32) as i16),
                 ease_in: 0,
                 ease_out: 0,
             }).collect()
@@ -641,7 +675,7 @@ fn make_rfa(anim: &gltf::Animation, skin: &gltf::Skin, buffers: &[BufferData]) -
             let translations = match reader.read_outputs().expect("expected animation channel outputs") {
                 ReadOutputs::Translations(r) => r,
                 _ => panic!("invalid type"),
-            };
+            }.map(|t| [-t[0], t[1], t[2]]);
             let times = inputs.map(time_to_frame_num).collect::<Vec<_>>();
             start_time = start_time.min(times.iter().copied().min().unwrap_or_default());
             end_time = end_time.max(times.iter().copied().max().unwrap_or_default());
