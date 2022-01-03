@@ -157,6 +157,12 @@ fn create_mesh_chunk_info(prim: &gltf::Primitive, materials: &[gltf::Material]) 
     }
 }
 
+fn flip_face(vindices: [u16; 3]) -> [u16; 3] {
+    // because we convert from right-handed to left-handed order of vertices must be flipped to
+    // fix backface culling
+    [vindices[0], vindices[2], vindices[1]]
+}
+
 fn create_mesh_chunk_data(prim: &gltf::Primitive, buffers: &[BufferData],
     transform: &Matrix3, is_character: bool) -> v3mc::MeshChunkData {
     
@@ -173,18 +179,23 @@ fn create_mesh_chunk_data(prim: &gltf::Primitive, buffers: &[BufferData],
     let uvs: Vec<_> = reader.read_tex_coords(0)
         .map(|iter| iter.into_f32().collect())
         .unwrap_or_else(|| (0..vecs.len()).map(|i| generate_uv(&vecs[i], &norms[i])).collect());
-
-    let indices: Vec<_> = reader.read_indices().expect("mesh has no indices").into_u32().collect();
+    let indices: Vec<u16> = reader.read_indices()
+        .expect("mesh has no indices")
+        .into_u32()
+        .map(|vindex| TryInto::<u16>::try_into(vindex).expect("vertex index does not fit in 16 bits"))
+        .collect();
     // Sanity checks
     assert!(indices.len() % 3 == 0, "number of indices is not a multiple of three: {}", indices.len());
     assert!(vecs.len() == norms.len());
     let nv = vecs.len();
+    let face_flags = if prim.material().double_sided() { v3mc::MeshFace::DOUBLE_SIDED } else { 0 };
 
-    let faces: Vec<_> = indices.chunks(3)
-        .map(|tri| [tri[0].try_into().unwrap(), tri[1].try_into().unwrap(), tri[2].try_into().unwrap()])
+    let faces: Vec<_> = indices
+        .chunks(3)
+        .map(|tri| flip_face([tri[0], tri[1], tri[2]]))
         .map(|vindices| v3mc::MeshFace{
             vindices,
-            flags: if prim.material().double_sided() { v3mc::MeshFace::DOUBLE_SIDED } else { 0 },
+            flags: face_flags,
         })
         .collect();
 
