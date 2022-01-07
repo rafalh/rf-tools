@@ -435,17 +435,17 @@ impl ColSphere {
 
 pub struct Bone {
     pub name: String,
-    pub rot: [f32; 4],
-    pub pos: [f32; 3],
-    pub parent: i32,
+    pub base_rotation: [f32; 4],
+    pub base_translation: [f32; 3],
+    pub parent_index: i32,
 }
 
 impl Bone {
     pub fn write<W: Write>(&self, wrt: &mut W) -> Result<()> {
         wrt.write_char_array(&self.name, 24)?;
-        wrt.write_f32_slice_le(&self.rot)?;
-        wrt.write_f32_slice_le(&self.pos)?;
-        wrt.write_i32::<LittleEndian>(self.parent)?;
+        wrt.write_f32_slice_le(&self.base_rotation)?;
+        wrt.write_f32_slice_le(&self.base_translation)?;
+        wrt.write_i32::<LittleEndian>(self.parent_index)?;
         Ok(())
     }
 }
