@@ -646,23 +646,31 @@ fn make_rfa(anim: &gltf::Animation, skin: &gltf::Skin, buffers: &[BufferData]) -
             .filter(|c| c.target().node().index() == n.index() && c.target().property() == Property::Rotation)
             .next();
         let rotation_keys = if let Some(rotation_channel) = rotation_channel_opt {
-            let interpolation = rotation_channel.sampler().interpolation();
-            assert!(interpolation == Interpolation::Linear || interpolation == Interpolation::Step);
             let reader = rotation_channel.reader(|buffer| Some(&buffers[buffer.index()]));
             let inputs = reader.read_inputs().expect("expected animation channel inputs");
             let rotations = match reader.read_outputs().expect("expected animation channel outputs") {
                 ReadOutputs::Rotations(r) => r,
                 _ => panic!("invalid type"),
-            }.into_f32().map(|r| make_short_quat(gltf_to_rf_quat(r)));
+            }.into_f32().map(|r| make_short_quat(gltf_to_rf_quat(r))).collect::<Vec<_>>();
+            let interpolation = rotation_channel.sampler().interpolation();
+            let chunked_rotations = if interpolation == Interpolation::CubicSpline {
+                rotations.chunks(3).map(|s| (s[0], s[1], s[2])).collect::<Vec<_>>()
+            } else {
+                rotations.iter().map(|r| (*r, *r, *r)).collect::<Vec<_>>()
+            };
             let times = inputs.map(time_to_frame_num).collect::<Vec<_>>();
             start_time = start_time.min(times.iter().copied().min().unwrap_or_default());
             end_time = end_time.max(times.iter().copied().max().unwrap_or_default());
-            times.iter().zip(rotations).map(|(t, r)| rfa::RotationKey {
-                time: *t,
-                rotation: r,
-                ease_in: 0,
-                ease_out: 0,
-            }).collect()
+            times.iter()
+                .copied()
+                .zip(chunked_rotations)
+                .map(|(time, (_, rotation, _))| rfa::RotationKey {
+                    time,
+                    rotation,
+                    ease_in: 0,
+                    ease_out: 0,
+                })
+                .collect()
         } else {
             Vec::new()
         };
@@ -670,23 +678,34 @@ fn make_rfa(anim: &gltf::Animation, skin: &gltf::Skin, buffers: &[BufferData]) -
             .filter(|c| c.target().node().index() == n.index() && c.target().property() == Property::Translation)
             .next();
         let translation_keys = if let Some(translation_channel) = translation_channel_opt {
-            let interpolation = translation_channel.sampler().interpolation();
-            assert!(interpolation == Interpolation::Linear || interpolation == Interpolation::Step);
             let reader = translation_channel.reader(|buffer| Some(&buffers[buffer.index()]));
             let inputs = reader.read_inputs().expect("expected animation channel inputs");
             let translations = match reader.read_outputs().expect("expected animation channel outputs") {
                 ReadOutputs::Translations(r) => r,
                 _ => panic!("invalid type"),
-            }.map(|t| gltf_to_rf_vec(t));
+            }.map(|t| gltf_to_rf_vec(t)).collect::<Vec<_>>();
+            let interpolation = translation_channel.sampler().interpolation();
+            let chunked_translations = if interpolation == Interpolation::CubicSpline {
+                translations.chunks(3).map(|s| (s[0], s[1], s[2])).collect::<Vec<_>>()
+            } else {
+                translations.iter().map(|t| (*t, *t, *t)).collect::<Vec<_>>()
+            };
             let times = inputs.map(time_to_frame_num).collect::<Vec<_>>();
             start_time = start_time.min(times.iter().copied().min().unwrap_or_default());
             end_time = end_time.max(times.iter().copied().max().unwrap_or_default());
-            times.iter().zip(translations).map(|(t, p)| rfa::TranslationKey {
-                time: *t,
-                translation: p,
-                in_tangent: p,
-                out_tangent: p,
-            }).collect()
+            times.iter()
+                .copied()
+                .zip(chunked_translations)
+                .map(|(time, (_, translation, _))|
+                    // ignore cubic spline tangents for now - RF uses bezier curve and tangents are different
+                    rfa::TranslationKey {
+                        time,
+                        in_tangent: translation,
+                        translation,
+                        out_tangent: translation,
+                    }
+                )
+                .collect()
         } else {
             Vec::new()
         };
