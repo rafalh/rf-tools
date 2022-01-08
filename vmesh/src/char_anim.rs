@@ -41,7 +41,8 @@ fn convert_rotation_keys(n: &gltf::Node, anim: &gltf::Animation, buffers: &[Buff
             use gltf::animation::Interpolation;
             let rotations_quads = rotations
                 .into_f32()
-                .map(|r| make_short_quat(gltf_to_rf_quat(r)));
+                .map(gltf_to_rf_quat)
+                .map(make_short_quat);
             let chunked_rotations = if interpolation == Interpolation::CubicSpline {
                 rotations_quads
                     .collect::<Vec<_>>()
@@ -124,11 +125,30 @@ fn determine_anim_time_range(bones: &[rfa::Bone]) -> (i32, i32) {
         .fold((0i32, 0i32), |(min, max), time| (min.min(time), max.max(time)))
 }
 
+fn check_for_scale_channels(n: &gltf::Node, anim: &gltf::Animation, buffers: &[BufferData]) {
+    for channel in get_node_anim_channels(n, anim) {
+        use gltf::animation::util::ReadOutputs;
+        let reader = channel.reader(|buffer| Some(&buffers[buffer.index()]));
+        if let Some(ReadOutputs::Scales(scales)) = reader.read_outputs() {
+            if scales.flatten().any(|s| (s - 1.0f32).abs() > 0.01f32) {
+                eprintln!(
+                    "Warning! Animation #{} '{}' is using unsupported scale channel on node #{} '{}'!",
+                    anim.index(),
+                    anim.name().unwrap_or_default(),
+                    n.index(),
+                    n.name().unwrap_or_default(),
+                );
+            }
+        }
+    }
+}
+
 fn make_rfa(anim: &gltf::Animation, skin: &gltf::Skin, buffers: &[BufferData]) -> rfa::File {
     let mut bones = Vec::with_capacity(skin.joints().count());
     for n in skin.joints() {
         let rotation_keys = convert_rotation_keys(&n, anim, buffers);
         let translation_keys = convert_translation_keys(&n, anim, buffers);
+        check_for_scale_channels(&n, anim, buffers);
         bones.push(rfa::Bone {
             weight: 1.0f32,
             rotation_keys,

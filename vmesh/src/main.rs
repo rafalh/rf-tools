@@ -470,6 +470,9 @@ fn make_v3mc_file(doc: &gltf::Document, buffers: &[BufferData], is_character: bo
     let csphere_nodes = get_csphere_nodes(doc);
     let cspheres = convert_cspheres(&csphere_nodes);
 
+    if doc.skins().count() > 1 {
+        eprintln!("Warning! There is more than one skin defined. Only first skin will be used.")
+    }
     let bones = if let Some(skin) = doc.skins().next() {
         char_anim::convert_bones(&skin, buffers)?
     } else {
