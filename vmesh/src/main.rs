@@ -447,30 +447,32 @@ fn convert_material(mat: &gltf::Material) -> v3mc::Material {
     }
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Debug, Default)]
 struct NodeExtras {
     #[serde(rename = "LOD_distance")]
     lod_distance: Option<f32>,
+}
+
+fn get_node_extras(node: &gltf::Node) -> NodeExtras {
+    node.extras().as_ref()
+        .map(|raw| serde_json::from_str::<NodeExtras>(raw.get()).ok())
+        .flatten()
+        .unwrap_or_default()
 }
 
 fn find_lod_nodes<'a>(node: &'a gltf::Node) -> Vec<(gltf::Node<'a>, f32)> {
     let mut child_node_dist_vec: Vec<(gltf::Node, f32)> = node.children()
         .filter(|n| n.mesh().is_some())
         .map(|n| {
-            let dist_opt = n.extras().as_ref()
-                .map(|e| serde_json::from_str::<NodeExtras>(e.get()).ok())
-                .flatten()
-                .map(|e| e.lod_distance)
-                .flatten();
+            let dist_opt = get_node_extras(&n).lod_distance;
             (n, dist_opt)
         })
-        .filter(|(n, d)| {
-            if d.is_none() {
+        .filter_map(|(n, dist_opt)| {
+            if dist_opt.is_none() {
                 eprintln!("Warning! Expected LOD_distance in child node {}", n.name().unwrap_or("None"));
             }
-            d.is_some()
+            dist_opt.map(|d| (n, d))
         })
-        .map(|(n, dist_opt)| (n, dist_opt.unwrap()))
         .chain(iter::once((node.clone(), 0f32)))
         .collect();
     child_node_dist_vec.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap());
@@ -562,31 +564,41 @@ fn get_joint_parent<'a>(node: &gltf::Node, skin: &gltf::Skin<'a>) -> Option<gltf
     skin.joints().find(|n| n.children().any(|c| c.index() == node.index()))
 }
 
+fn convert_bone(n: &gltf::Node, inverse_bind_matrix: &[[f32; 4]; 4], index: usize, skin: &gltf::Skin) -> v3mc::Bone {
+    let name = n.name().map(&str::to_owned).unwrap_or_else(|| format!("bone_{}", index));
+    let parent_node_opt = get_joint_parent(n, skin);
+    let parent_index = parent_node_opt
+        .map(|pn| get_joint_index(&pn, skin) as i32)
+        .unwrap_or(-1);
+    let inv_transform = glam::Mat4::from_cols_array_2d(inverse_bind_matrix);
+    let (gltf_scale, gltf_rotation, gltf_translation) = inv_transform.to_scale_rotation_translation();
+    assert!((gltf_scale - glam::Vec3::ONE).max_element() < 0.01f32, "scale is not supported: {}", gltf_scale);
+    let base_rotation = gltf_to_rf_quat(quat_to_array(&gltf_rotation));
+    let base_translation = gltf_to_rf_vec(gltf_translation.to_array());
+    v3mc::Bone { name, base_rotation, base_translation, parent_index }
+}
+
 fn convert_bones(skin: &gltf::Skin, buffers: &[BufferData]) -> std::io::Result<Vec<v3mc::Bone>> {
-    let joints: Vec<_> = skin.joints().collect();
-    if joints.len() > v3mc::MAX_BONES {
-        let err_msg = format!("too many bones: found {} but only {} are supported", joints.len(), v3mc::MAX_BONES);
+    let num_joints = skin.joints().count();
+    if num_joints > v3mc::MAX_BONES {
+        let err_msg = format!("too many bones: found {} but only {} are supported", num_joints, v3mc::MAX_BONES);
         return Err(new_custom_error(err_msg));
     }
 
     let inverse_bind_matrices: Vec<_> = skin.reader(|buffer| Some(&buffers[buffer.index()]))
         .read_inverse_bind_matrices()
-        .unwrap()
+        .expect("expected inverse bind matrices")
         .collect();
 
-    let mut bones = Vec::with_capacity(joints.len());
-    for (i, n) in joints.iter().enumerate() {
-        let name = n.name().map(&str::to_owned).unwrap_or_else(|| format!("bone_{}", i));
-        let parent_node_opt = get_joint_parent(n, skin);
-        let parent_index = parent_node_opt
-            .map(|pn| get_joint_index(&pn, skin) as i32)
-            .unwrap_or(-1);
-        let inv_transform = glam::Mat4::from_cols_array_2d(&inverse_bind_matrices[i]);
-        let (gltf_scale, gltf_rotation, gltf_translation) = inv_transform.to_scale_rotation_translation();
-        assert!((gltf_scale - glam::Vec3::ONE).max_element() < 0.01f32, "scale is not supported: {}", gltf_scale);
-        let base_rotation = gltf_to_rf_quat(quat_to_array(&gltf_rotation));
-        let base_translation = gltf_to_rf_vec(gltf_translation.to_array());
-        let bone = v3mc::Bone { name, base_rotation, base_translation, parent_index };
+    if inverse_bind_matrices.len() != num_joints {
+        let err_msg = format!("invalid number of inverse bind matrices: expected {}, got {}",
+            num_joints, inverse_bind_matrices.len());
+        return Err(new_custom_error(err_msg));
+    }
+
+    let mut bones = Vec::with_capacity(num_joints);
+    for (i, n) in skin.joints().enumerate() {
+        let bone = convert_bone(&n, &inverse_bind_matrices[i], i, skin);
         bones.push(bone);
     }
     Ok(bones)
@@ -628,7 +640,7 @@ fn generate_output_file_name(input_file_name: &str, output_file_name_opt: Option
         })
 }
 
-fn time_to_frame_num(time_sec: f32) -> i32 {
+fn gltf_time_to_rfa_time(time_sec: f32) -> i32 {
     (time_sec * 30.0f32 * 160.0f32) as i32
 }
 
@@ -636,36 +648,46 @@ fn make_short_quat(quat: [f32; 4]) -> [i16; 4] {
     quat.map(|x| (x * 16383.0f32) as i16)
 }
 
-fn make_rfa(anim: &gltf::Animation, skin: &gltf::Skin, buffers: &[BufferData]) -> rfa::File {
-    let mut start_time = 0;
-    let mut end_time = 0;
+fn get_node_anim_channels<'a>(n: &gltf::Node, anim: &'a gltf::Animation) -> impl Iterator<Item = gltf::animation::Channel<'a>> + 'a {
+    let node_index = n.index();
+    anim.channels()
+        .filter(move |c| c.target().node().index() == node_index)
+}
 
-    let mut bones = Vec::with_capacity(skin.joints().count());
-    for n in skin.joints() {
-        use gltf::animation::Property;
-        use gltf::animation::util::ReadOutputs;
-        use gltf::animation::Interpolation;
-        let rotation_channel_opt = anim.channels()
-            .filter(|c| c.target().node().index() == n.index() && c.target().property() == Property::Rotation)
-            .next();
-        let rotation_keys = if let Some(rotation_channel) = rotation_channel_opt {
-            let reader = rotation_channel.reader(|buffer| Some(&buffers[buffer.index()]));
-            let inputs = reader.read_inputs().expect("expected animation channel inputs");
-            let rotations = match reader.read_outputs().expect("expected animation channel outputs") {
-                ReadOutputs::Rotations(r) => r,
-                _ => panic!("invalid type"),
-            }.into_f32().map(|r| make_short_quat(gltf_to_rf_quat(r))).collect::<Vec<_>>();
-            let interpolation = rotation_channel.sampler().interpolation();
+fn convert_rotation_keys(n: &gltf::Node, anim: &gltf::Animation, buffers: &[BufferData]) -> Vec<rfa::RotationKey> {
+    get_node_anim_channels(n, anim)
+        .filter_map(|channel| {
+            let reader = channel.reader(|buffer| Some(&buffers[buffer.index()]));
+            let interpolation = channel.sampler().interpolation();
+            reader.read_inputs()
+                .map(|inputs| reader.read_outputs().map(|outputs| (inputs, outputs, interpolation)))
+                .flatten()
+        })
+        .filter_map(|(inputs, outputs, interpolation)| {
+            use gltf::animation::util::ReadOutputs;
+            match outputs {
+                ReadOutputs::Rotations(rotations) => Some((inputs, rotations, interpolation)),
+                _ => None,
+            }
+        })
+        .map(|(inputs, rotations, interpolation)| {
+            use gltf::animation::Interpolation;
+            let rotations_quads = rotations
+                .into_f32()
+                .map(|r| make_short_quat(gltf_to_rf_quat(r)));
             let chunked_rotations = if interpolation == Interpolation::CubicSpline {
-                rotations.chunks(3).map(|s| (s[0], s[1], s[2])).collect::<Vec<_>>()
+                rotations_quads
+                    .collect::<Vec<_>>()
+                    .chunks(3)
+                    .map(|s| (s[0], s[1], s[2]))
+                    .collect::<Vec<_>>()
             } else {
-                rotations.iter().map(|r| (*r, *r, *r)).collect::<Vec<_>>()
+                rotations_quads
+                    .map(|r| (r, r, r))
+                    .collect::<Vec<_>>()
             };
-            let times = inputs.map(time_to_frame_num).collect::<Vec<_>>();
-            start_time = start_time.min(times.iter().copied().min().unwrap_or_default());
-            end_time = end_time.max(times.iter().copied().max().unwrap_or_default());
-            times.iter()
-                .copied()
+            inputs
+                .map(gltf_time_to_rfa_time)
                 .zip(chunked_rotations)
                 .map(|(time, (_, rotation, _))| rfa::RotationKey {
                     time,
@@ -673,31 +695,43 @@ fn make_rfa(anim: &gltf::Animation, skin: &gltf::Skin, buffers: &[BufferData]) -
                     ease_in: 0,
                     ease_out: 0,
                 })
-                .collect()
-        } else {
-            Vec::new()
-        };
-        let translation_channel_opt = anim.channels()
-            .filter(|c| c.target().node().index() == n.index() && c.target().property() == Property::Translation)
-            .next();
-        let translation_keys = if let Some(translation_channel) = translation_channel_opt {
-            let reader = translation_channel.reader(|buffer| Some(&buffers[buffer.index()]));
-            let inputs = reader.read_inputs().expect("expected animation channel inputs");
-            let translations = match reader.read_outputs().expect("expected animation channel outputs") {
-                ReadOutputs::Translations(r) => r,
-                _ => panic!("invalid type"),
-            }.map(|t| gltf_to_rf_vec(t)).collect::<Vec<_>>();
-            let interpolation = translation_channel.sampler().interpolation();
+                .collect::<Vec<_>>()
+        })
+        .next()
+        .unwrap_or_default()
+}
+
+fn convert_translation_keys(n: &gltf::Node, anim: &gltf::Animation, buffers: &[BufferData]) -> Vec<rfa::TranslationKey> {
+    get_node_anim_channels(n, anim)
+        .filter_map(|channel| {
+            let reader = channel.reader(|buffer| Some(&buffers[buffer.index()]));
+            let interpolation = channel.sampler().interpolation();
+            reader.read_inputs()
+                .map(|inputs| reader.read_outputs().map(|outputs| (inputs, outputs, interpolation)))
+                .flatten()
+        })
+        .filter_map(|(inputs, outputs, interpolation)| {
+            use gltf::animation::util::ReadOutputs;
+            match outputs {
+                ReadOutputs::Translations(translations) => Some((inputs, translations, interpolation)),
+                _ => None,
+            }
+        })
+        .map(|(inputs, translations, interpolation)| {
+            use gltf::animation::Interpolation;
             let chunked_translations = if interpolation == Interpolation::CubicSpline {
-                translations.chunks(3).map(|s| (s[0], s[1], s[2])).collect::<Vec<_>>()
+                translations
+                    .collect::<Vec<_>>()
+                    .chunks(3)
+                    .map(|s| (s[0], s[1], s[2]))
+                    .collect::<Vec<_>>()
             } else {
-                translations.iter().map(|t| (*t, *t, *t)).collect::<Vec<_>>()
+                translations
+                    .map(|t| (t, t, t))
+                    .collect::<Vec<_>>()
             };
-            let times = inputs.map(time_to_frame_num).collect::<Vec<_>>();
-            start_time = start_time.min(times.iter().copied().min().unwrap_or_default());
-            end_time = end_time.max(times.iter().copied().max().unwrap_or_default());
-            times.iter()
-                .copied()
+            inputs
+                .map(gltf_time_to_rfa_time)
                 .zip(chunked_translations)
                 .map(|(time, (_, translation, _))|
                     // ignore cubic spline tangents for now - RF uses bezier curve and tangents are different
@@ -708,16 +742,32 @@ fn make_rfa(anim: &gltf::Animation, skin: &gltf::Skin, buffers: &[BufferData]) -
                         out_tangent: translation,
                     }
                 )
-                .collect()
-        } else {
-            Vec::new()
-        };
+                .collect::<Vec<_>>()
+        })
+        .next()
+        .unwrap_or_default()
+}
+
+fn determine_anim_time_range(bones: &[rfa::Bone]) -> (i32, i32) {
+    bones.iter()
+        .flat_map(|b| b.rotation_keys.iter()
+            .map(|k| k.time)
+            .chain(b.translation_keys.iter().map(|k| k.time)))
+        .fold((0i32, 0i32), |(min, max), time| (min.min(time), max.max(time)))
+}
+
+fn make_rfa(anim: &gltf::Animation, skin: &gltf::Skin, buffers: &[BufferData]) -> rfa::File {
+    let mut bones = Vec::with_capacity(skin.joints().count());
+    for n in skin.joints() {
+        let rotation_keys = convert_rotation_keys(&n, anim, buffers);
+        let translation_keys = convert_translation_keys(&n, anim, buffers);
         bones.push(rfa::Bone {
             weight: 1.0f32,
             rotation_keys,
             translation_keys,
         });
     }
+    let (start_time, end_time) = determine_anim_time_range(&bones);
     let header = rfa::FileHeader {
         num_bones: bones.len() as i32,
         start_time,
@@ -734,7 +784,7 @@ fn make_rfa(anim: &gltf::Animation, skin: &gltf::Skin, buffers: &[BufferData]) -
     }
 }
 
-fn convert_animation(anim: &gltf::Animation, index: usize, skin: &gltf::Skin, buffers: &[BufferData], output_dir: &Path) -> std::io::Result<()> {
+fn convert_animation_to_rfa(anim: &gltf::Animation, index: usize, skin: &gltf::Skin, buffers: &[BufferData], output_dir: &Path) -> std::io::Result<()> {
     let name = anim.name().map(&str::to_owned).unwrap_or_else(|| format!("anim_{}", index));
     println!("Processing animation {}", name);
     let file_name = output_dir.join(format!("{}.rfa", name));
@@ -765,7 +815,7 @@ fn convert_gltf_to_v3mc(input_file_name: &str, output_file_name_opt: Option<&str
     let output_dir = Path::new(&output_file_name).parent().unwrap();
     if let Some(skin) = skin_opt {
         for (i, anim) in document.animations().enumerate() {
-            convert_animation(&anim, i, &skin, &buffers, output_dir)?;
+            convert_animation_to_rfa(&anim, i, &skin, &buffers, output_dir)?;
         }
     }
 
@@ -774,7 +824,7 @@ fn convert_gltf_to_v3mc(input_file_name: &str, output_file_name_opt: Option<&str
 }
 
 fn main() {
-    println!("GLTF to V3M converter {} by Rafalh", env!("CARGO_PKG_VERSION"));
+    println!("GLTF to V3M/V3C converter {} by Rafalh", env!("CARGO_PKG_VERSION"));
 
     let mut args = env::args();
     let app_name = args.next().unwrap();
