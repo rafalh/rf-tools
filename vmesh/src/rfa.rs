@@ -2,7 +2,7 @@ use std::io::{Write, Seek, SeekFrom, Result};
 use byteorder::{LittleEndian, WriteBytesExt};
 use crate::io_utils::WriteExt;
 
-pub const RFA_SIGNATURE: u32 = 0x46564D56; // 'VMVF'
+pub const RFA_SIGNATURE: u32 = 0x4656_4D56; // 'VMVF'
 pub const RFA_VERSION: i32 = 8; // 'VMVF'
 
 pub struct File {

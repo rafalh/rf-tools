@@ -32,7 +32,7 @@ pub(crate) fn compute_triangle_normal(p0: &Vector3, p1: &Vector3, p2: &Vector3) 
     let t0 = [p1[0] - p0[0], p1[1] - p0[1], p1[2] - p0[2]];
     let t1 = [p2[0] - p1[0], p2[1] - p1[1], p2[2] - p1[2]];
 
-    let mut normal = [0f32; 3];
+    let mut normal = [0_f32; 3];
     normal[0] = (t0[1] * t1[2]) - (t0[2] * t1[1]);
     normal[1] = (t0[2] * t1[0]) - (t0[0] * t1[2]);
     normal[2] = (t0[0] * t1[1]) - (t0[1] * t1[0]);

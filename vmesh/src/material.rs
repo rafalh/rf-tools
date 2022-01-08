@@ -47,6 +47,7 @@ fn change_texture_ext_to_tga(name: &str) -> String {
 }
 
 fn get_material_base_color_texture_name(material: &gltf::material::Material) -> String {
+    const DEFAULT_TEXTURE: &str = "Rck_Default.tga";
     if let Some(tex_info) = material.pbr_metallic_roughness().base_color_texture() {
         let tex = tex_info.texture();
         let img = tex.source();
@@ -57,25 +58,28 @@ fn get_material_base_color_texture_name(material: &gltf::material::Material) -> 
             return change_texture_ext_to_tga(uri);
         }
     }
-    const DEFAULT_TEXTURE: &str = "Rck_Default.tga";
     eprintln!("Cannot obtain texture name for material {} (materials without base color texture are not supported)",
         material.index().unwrap_or(0));
     DEFAULT_TEXTURE.into()
 }
 
 fn get_material_self_illumination(mat: &gltf::Material) -> f32 {
-    mat.emissive_factor().iter().cloned().fold(0f32, f32::max)
+    mat.emissive_factor().iter().copied().fold(0_f32, f32::max)
 }
 
 pub(crate) fn convert_material(mat: &gltf::Material) -> v3mc::Material {
     let tex_name = get_material_base_color_texture_name(mat);
     let self_illumination = get_material_self_illumination(mat);
     let specular_level = mat.pbr_specular_glossiness()
-        .map(|spec_glos| spec_glos.specular_factor().iter().cloned().fold(0f32, f32::max))
-        .unwrap_or_else(|| mat.pbr_metallic_roughness().metallic_factor());
+        .map_or_else(
+            || mat.pbr_metallic_roughness().metallic_factor(),
+            |spec_glos| spec_glos.specular_factor().iter().copied().fold(0_f32, f32::max),
+        );
     let glossiness = mat.pbr_specular_glossiness()
-        .map(|spec_glos| spec_glos.glossiness_factor())
-        .unwrap_or_else(|| 1.0 - mat.pbr_metallic_roughness().roughness_factor());
+        .map_or_else(
+            || 1.0 - mat.pbr_metallic_roughness().roughness_factor(), 
+            |spec_glos| spec_glos.glossiness_factor(),
+        );
 
     v3mc::Material{
         tex_name,

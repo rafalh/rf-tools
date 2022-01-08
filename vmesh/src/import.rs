@@ -3,7 +3,6 @@
 // It allows this crate to have less dependencies, lower executable size and much faster conversion time.
 // It is workaround for: https://github.com/gltf-rs/gltf/issues/222 
 
-use gltf::{self, buffer};
 use std::{fs, io, ops};
 use std::path::Path;
 use gltf::{Document, Error, Result};
@@ -91,10 +90,11 @@ pub fn import_buffer_data(
 ) -> Result<Vec<BufferData>> {
     let mut buffers = Vec::new();
     for buffer in document.buffers() {
+        use gltf::buffer::Source;
         let mut data = match buffer.source() {
-            buffer::Source::Uri(uri) if base.is_some() => Scheme::read(base.unwrap(), uri),
-            buffer::Source::Bin => blob.take().ok_or_else(|| Error::Io(io::Error::new(io::ErrorKind::Other, "MissingBlob"))),
-            _ => Err(Error::Io(io::Error::new(io::ErrorKind::Other, "ExternalReferenceInSliceImport")))
+            Source::Uri(uri) if base.is_some() => Scheme::read(base.unwrap(), uri),
+            Source::Bin => blob.take().ok_or_else(|| Error::Io(io::Error::new(io::ErrorKind::Other, "MissingBlob"))),
+            Source::Uri(_) => Err(Error::Io(io::Error::new(io::ErrorKind::Other, "ExternalReferenceInSliceImport")))
         }?;
         if data.len() < buffer.length() {
             return Err(Error::Io(io::Error::new(io::ErrorKind::Other, "BufferLength")));

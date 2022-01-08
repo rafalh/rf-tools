@@ -29,7 +29,7 @@ pub(crate) trait WriteExt: Write {
             return Err(new_custom_error(format!("string value {} is too long (max {})", string, size - 1)));
         }
         self.write_all(bytes)?;
-        let padding = vec![0u8; size - bytes.len()];
+        let padding = vec![0_u8; size - bytes.len()];
         self.write_all(&padding)?;
         Ok(())
     }

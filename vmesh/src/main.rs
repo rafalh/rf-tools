@@ -20,7 +20,9 @@ use serde_derive::Deserialize;
 use import::BufferData;
 use io_utils::new_custom_error;
 use material::{convert_material, create_mesh_material_ref};
-use math_utils::*;
+use math_utils::{
+    Matrix3, Matrix4, Vector3, compute_triangle_plane, generate_uv, get_vector_len, transform_normal, transform_point
+};
 
 // glTF defines -X as right, RF defines +X as right
 // Both glTF and RF defines +Y as up, +Z as forward
@@ -80,7 +82,7 @@ fn create_v3mc_file_header(lod_meshes: &[v3mc::LodMesh], cspheres: &[v3mc::ColSp
 }
 
 fn get_primitive_vertex_count(prim: &gltf::Primitive) -> usize {
-    prim.attributes().find(|p| p.0 == gltf::mesh::Semantic::Positions).map(|a| a.1.count()).unwrap_or(0)
+    prim.attributes().find(|p| p.0 == gltf::mesh::Semantic::Positions).map_or(0, |a| a.1.count())
 }
 
 fn count_mesh_vertices(mesh: &gltf::Mesh) -> usize {
@@ -94,8 +96,8 @@ fn compute_mesh_bbox(mesh: &gltf::Mesh, buffers: &[BufferData], transform: &Matr
     if count_mesh_vertices(mesh) == 0 {
         // Mesh has no vertices so return empty AABB
         return gltf::mesh::BoundingBox {
-            min: [0f32; 3],
-            max: [0f32; 3],
+            min: [0_f32; 3],
+            max: [0_f32; 3],
         };
     }
     let mut aabb = gltf::mesh::BoundingBox {
@@ -120,7 +122,7 @@ fn compute_mesh_bbox(mesh: &gltf::Mesh, buffers: &[BufferData], transform: &Matr
 }
 
 fn compute_mesh_bounding_sphere_radius(mesh: &gltf::Mesh, buffers: &[BufferData], transform: &Matrix3) -> f32 {
-    let mut radius = 0f32;
+    let mut radius = 0_f32;
     for prim in mesh.primitives() {
         let reader = prim.reader(|buffer| Some(&buffers[buffer.index()]));
         if let Some(iter) = reader.read_positions() {
@@ -138,9 +140,9 @@ fn compute_mesh_bounding_sphere_radius(mesh: &gltf::Mesh, buffers: &[BufferData]
 }
 
 fn extract_translation_from_matrix(transform: &Matrix4) -> (Vector3, Matrix3) {
-    let mut translation = [0f32; 3];
+    let mut translation = [0_f32; 3];
     translation.copy_from_slice(&transform[3][0..3]);
-    let mut rot_scale_mat = [[0f32; 3]; 3];
+    let mut rot_scale_mat = [[0_f32; 3]; 3];
     rot_scale_mat[0].copy_from_slice(&transform[0][0..3]);
     rot_scale_mat[1].copy_from_slice(&transform[1][0..3]);
     rot_scale_mat[2].copy_from_slice(&transform[2][0..3]);
@@ -169,12 +171,15 @@ fn create_mesh_chunk_data(prim: &gltf::Primitive, buffers: &[BufferData],
         .map(|pos| gltf_to_rf_vec(transform_point(&pos, transform)))
         .collect();
     let norms: Vec<_> = reader.read_normals()
+        // FIXME: according to GLTF spec we should generate flat normals here
         .expect("mesh has no normals")
         .map(|norm| gltf_to_rf_vec(transform_normal(&norm, transform)))
         .collect();
     let uvs: Vec<_> = reader.read_tex_coords(0)
-        .map(|iter| iter.into_f32().collect())
-        .unwrap_or_else(|| (0..vecs.len()).map(|i| generate_uv(&vecs[i], &norms[i])).collect());
+        .map_or_else(
+            || (0..vecs.len()).map(|i| generate_uv(&vecs[i], &norms[i])).collect(),
+            |iter| iter.into_f32().collect(),
+        );
     let indices: Vec<u16> = reader.read_indices()
         .expect("mesh has no indices")
         .into_u32()
@@ -195,13 +200,13 @@ fn create_mesh_chunk_data(prim: &gltf::Primitive, buffers: &[BufferData],
         })
         .collect();
 
-    let face_planes: Vec::<_> = if !is_character {
+    let face_planes: Vec::<_> = if is_character {
+        Vec::new()
+    } else {
         indices.chunks(3)
             .map(|tri| (tri[0] as usize, tri[1] as usize, tri[2] as usize))
             .map(|(i, j, k)| compute_triangle_plane(&vecs[i], &vecs[j], &vecs[k]))
             .collect()
-    } else {
-        Vec::new()
     };
 
     let same_pos_vertex_offsets: Vec<i16> = (0..nv).map(|_| 0).collect();
@@ -212,7 +217,7 @@ fn create_mesh_chunk_data(prim: &gltf::Primitive, buffers: &[BufferData],
             .map(|(indices_u16, weights)| {
                 let indices = indices_u16
                     .map(|x| x.try_into().expect("joint index should fit in u8"));
-                v3mc::WeightIndexArray { indices, weights }
+                v3mc::WeightIndexArray { weights, indices }
             })
             .collect()
     } else {
@@ -362,8 +367,7 @@ struct NodeExtras {
 
 fn get_node_extras(node: &gltf::Node) -> NodeExtras {
     node.extras().as_ref()
-        .map(|raw| serde_json::from_str::<NodeExtras>(raw.get()).ok())
-        .flatten()
+        .and_then(|raw| serde_json::from_str::<NodeExtras>(raw.get()).ok())
         .unwrap_or_default()
 }
 
@@ -380,7 +384,7 @@ fn find_lod_nodes<'a>(node: &'a gltf::Node) -> Vec<(gltf::Node<'a>, f32)> {
             }
             dist_opt.map(|d| (n, d))
         })
-        .chain(iter::once((node.clone(), 0f32)))
+        .chain(iter::once((node.clone(), 0_f32)))
         .collect();
     child_node_dist_vec.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap());
     child_node_dist_vec
@@ -438,8 +442,7 @@ fn convert_lod_mesh(node: &gltf::Node, buffers: &[BufferData], is_character: boo
 
 fn convert_csphere(node: &gltf::Node, index: usize) -> v3mc::ColSphere {
     let name = node.name()
-        .map(&str::to_owned)
-        .unwrap_or_else(|| format!("csphere_{}", index));
+        .map_or_else(|| format!("csphere_{}", index), &str::to_owned);
     let transform = glam::Mat4::from_cols_array_2d(&node.transform().matrix());
     let (scale, _rotation, translation) = transform.to_scale_rotation_translation();
     let radius = scale.max_element();
@@ -471,7 +474,7 @@ fn make_v3mc_file(doc: &gltf::Document, buffers: &[BufferData], is_character: bo
     let cspheres = convert_cspheres(&csphere_nodes);
 
     if doc.skins().count() > 1 {
-        eprintln!("Warning! There is more than one skin defined. Only first skin will be used.")
+        eprintln!("Warning! There is more than one skin defined. Only first skin will be used.");
     }
     let bones = if let Some(skin) = doc.skins().next() {
         char_anim::convert_bones(&skin, buffers)?
@@ -489,13 +492,12 @@ fn make_v3mc_file(doc: &gltf::Document, buffers: &[BufferData], is_character: bo
 
 fn generate_output_file_name(input_file_name: &str, output_file_name_opt: Option<&str>, is_character: bool) -> String {
     output_file_name_opt
-        .map(|s| s.to_owned())
-        .unwrap_or_else(|| {
+        .map_or_else(|| {
             let base_file_name = input_file_name.strip_suffix(".gltf")
             .unwrap_or_else(|| input_file_name.strip_suffix(".glb").unwrap_or(input_file_name));
             let ext = if is_character { "v3c" } else { "v3m" };
             format!("{}.{}", base_file_name, ext)
-        })
+        }, &str::to_owned)
 }
 
 fn convert_gltf_to_v3mc(input_file_name: &str, output_file_name_opt: Option<&str>) -> Result<(), Box<dyn Error>> {

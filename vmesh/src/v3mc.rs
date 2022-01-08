@@ -4,17 +4,17 @@ use byteorder::{LittleEndian, WriteBytesExt};
 use crate::io_utils::WriteExt;
 
 // File signatures
-pub const V3M_SIGNATURE: u32 = 0x52463344; // RF3D
-pub const V3C_SIGNATURE: u32 = 0x5246434D; // RFCM
+pub const V3M_SIGNATURE: u32 = 0x5246_3344; // RF3D
+pub const V3C_SIGNATURE: u32 = 0x5246_434D; // RFCM
 
 // Supported format version
 pub const VERSION: u32 = 0x40000;
 
 // File chunk types
-pub const END_CHUNK: u32       = 0x00000000; // terminating section
-pub const SUBMESH_CHUNK: u32   = 0x5355424D; // 'SUBM'
-pub const CSPHERE_CHUNK: u32   = 0x43535048; // 'CSPH'
-pub const BONE_CHUNK: u32      = 0x424F4E45; // 'BONE'
+pub const END_CHUNK: u32       = 0x0000_0000; // terminating section
+pub const SUBMESH_CHUNK: u32   = 0x5355_424D; // 'SUBM'
+pub const CSPHERE_CHUNK: u32   = 0x4353_5048; // 'CSPH'
+pub const BONE_CHUNK: u32      = 0x424F_4E45; // 'BONE'
 
 pub const MAX_BONES: usize = 50;
 
@@ -55,7 +55,7 @@ impl File {
             FileChunk::write_new(wrt, BONE_CHUNK, |wrt| {
                 wrt.write_i32::<LittleEndian>(self.bones.len().try_into().expect("number of bones should fit in i32"))?;
                 for bone in &self.bones {
-                    bone.write(wrt)?
+                    bone.write(wrt)?;
                 }
                 Ok(())
             })?;
@@ -296,12 +296,12 @@ pub struct MeshDataBlockChunkInfo {
 impl MeshDataBlockChunkInfo {
     pub fn write<W: Write>(&self, wrt: &mut W) -> Result<()> {
         // unused data before texture index (game overrides it with data from MeshChunk)
-        let unused_0 = [0u8; 0x20];
+        let unused_0 = [0_u8; 0x20];
         wrt.write_all(&unused_0)?;
         // write texture index in LOD model textures array
         wrt.write_i32::<LittleEndian>(self.texture_index)?;
         // unused data after texture index (game overrides it with data from MeshChunk)
-        let unused_24 = [0u8; 0x38 - 0x24];
+        let unused_24 = [0_u8; 0x38 - 0x24];
         wrt.write_all(&unused_24)?;
         Ok(())
     }
