@@ -5,7 +5,7 @@ use std::f32;
 use std::path::Path;
 use gltf::animation::Interpolation;
 use gltf::animation::util::{ReadInputs, ReadOutputs};
-use crate::{rfa, v3mc, gltf_to_rf_quat, gltf_to_rf_vec, quat_to_array};
+use crate::{rfa, v3mc, gltf_to_rf_quat, gltf_to_rf_vec};
 use crate::import::BufferData;
 use crate::io_utils::new_custom_error;
 
@@ -202,8 +202,8 @@ fn convert_bone(n: &gltf::Node, inverse_bind_matrix: &[[f32; 4]; 4], index: usiz
     let inv_transform = glam::Mat4::from_cols_array_2d(inverse_bind_matrix);
     let (gltf_scale, gltf_rotation, gltf_translation) = inv_transform.to_scale_rotation_translation();
     assert!((gltf_scale - glam::Vec3::ONE).max_element() < 0.01_f32, "scale is not supported: {}", gltf_scale);
-    let base_rotation = gltf_to_rf_quat(quat_to_array(&gltf_rotation));
-    let base_translation = gltf_to_rf_vec(gltf_translation.to_array());
+    let base_rotation = gltf_to_rf_quat(gltf_rotation.into());
+    let base_translation = gltf_to_rf_vec(gltf_translation.into());
     v3mc::Bone { name, base_rotation, base_translation, parent_index }
 }
 

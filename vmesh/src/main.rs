@@ -27,9 +27,9 @@ use math_utils::{
 // glTF defines -X as right, RF defines +X as right
 // Both glTF and RF defines +Y as up, +Z as forward
 
-pub(crate) fn gltf_to_rf_vec(pos: [f32; 3]) -> [f32; 3] {
+pub(crate) fn gltf_to_rf_vec(vec: [f32; 3]) -> [f32; 3] {
     // in GLTF negative X is right, in RF positive X is right
-    [-pos[0], pos[1], pos[2]]
+    [-vec[0], vec[1], vec[2]]
 }
 
 pub(crate) fn gltf_to_rf_quat(quat: [f32; 4]) -> [f32; 4] {
@@ -235,18 +235,12 @@ fn create_mesh_chunk_data(prim: &gltf::Primitive, buffers: &[BufferData],
     }
 }
 
-fn quat_to_array(q: &glam::Quat) -> [f32; 4] {
-    [q.x, q.y, q.z, q.w]
-}
-
 fn create_prop_point(node: &gltf::Node, transform: &Matrix3) -> v3mc::PropPoint {
-    let node_transform = glam::Mat4::from_cols_array_2d(&node.transform().matrix());
-    let (_scale, rotation, translation) = node_transform.to_scale_rotation_translation();
-    //let (translation, rotation, _scale) = node.transform().decomposed();
+    let (translation, rotation, _scale) = node.transform().decomposed();
     v3mc::PropPoint{
         name: node.name().expect("prop point name is missing").to_string(),
-        orient: gltf_to_rf_quat(quat_to_array(&rotation)),
-        pos: gltf_to_rf_vec(transform_point(&translation.to_array(), transform)),
+        orient: gltf_to_rf_quat(rotation),
+        pos: gltf_to_rf_vec(transform_point(&translation, transform)),
         parent_index: -1,
     }
 }
@@ -449,7 +443,7 @@ fn convert_csphere(node: &gltf::Node, index: usize) -> v3mc::ColSphere {
     v3mc::ColSphere{
         name,
         parent_index: -1,
-        pos: gltf_to_rf_vec(translation.to_array()),
+        pos: gltf_to_rf_vec(translation.into()),
         radius,
     }
 }
