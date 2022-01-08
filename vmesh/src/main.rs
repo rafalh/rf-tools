@@ -3,6 +3,8 @@ mod io_utils;
 mod math_utils;
 mod v3mc;
 mod rfa;
+mod char_anim;
+mod material;
 
 use std::io::Cursor;
 use std::fs::File;
@@ -17,20 +19,27 @@ use std::path::Path;
 use serde_derive::Deserialize;
 use import::BufferData;
 use io_utils::new_custom_error;
+use material::{convert_material, create_mesh_material_ref};
 use math_utils::*;
 
 // glTF defines -X as right, RF defines +X as right
 // Both glTF and RF defines +Y as up, +Z as forward
 
-fn gltf_to_rf_vec(pos: [f32; 3]) -> [f32; 3] {
+pub(crate) fn gltf_to_rf_vec(pos: [f32; 3]) -> [f32; 3] {
     // in GLTF negative X is right, in RF positive X is right
     [-pos[0], pos[1], pos[2]]
 }
 
-fn gltf_to_rf_quat(quat: [f32; 4]) -> [f32; 4] {
+pub(crate) fn gltf_to_rf_quat(quat: [f32; 4]) -> [f32; 4] {
     // convert to RF coordinate system
     // it seems RF expects inverted quaternions...
     [-quat[0], quat[1], quat[2], quat[3]]
+}
+
+fn gltf_to_rf_face(vindices: [u16; 3]) -> [u16; 3] {
+    // because we convert from right-handed to left-handed order of vertices must be flipped to
+    // fix backface culling
+    [vindices[0], vindices[2], vindices[1]]
 }
 
 fn build_child_nodes_indices(doc: &gltf::Document) -> Vec<usize> {
@@ -57,10 +66,6 @@ fn get_mesh_materials<'a>(mesh: &gltf::Mesh<'a>) -> Vec<gltf::Material<'a>> {
         .collect::<Vec<_>>();
     materials.dedup_by_key(|m| m.index());
     materials
-}
-
-fn get_material_self_illumination(mat: &gltf::Material) -> f32 {
-    mat.emissive_factor().iter().cloned().fold(0f32, f32::max)
 }
 
 fn create_v3mc_file_header(lod_meshes: &[v3mc::LodMesh], cspheres: &[v3mc::ColSphere], is_character: bool) -> v3mc::FileHeader {
@@ -154,12 +159,6 @@ fn create_mesh_chunk_info(prim: &gltf::Primitive, materials: &[gltf::Material]) 
     }
 }
 
-fn flip_face(vindices: [u16; 3]) -> [u16; 3] {
-    // because we convert from right-handed to left-handed order of vertices must be flipped to
-    // fix backface culling
-    [vindices[0], vindices[2], vindices[1]]
-}
-
 fn create_mesh_chunk_data(prim: &gltf::Primitive, buffers: &[BufferData],
     transform: &Matrix3, is_character: bool) -> v3mc::MeshChunkData {
     
@@ -189,7 +188,7 @@ fn create_mesh_chunk_data(prim: &gltf::Primitive, buffers: &[BufferData],
 
     let faces: Vec<_> = indices
         .chunks(3)
-        .map(|tri| flip_face([tri[0], tri[1], tri[2]]))
+        .map(|tri| gltf_to_rf_face([tri[0], tri[1], tri[2]]))
         .map(|vindices| v3mc::MeshFace{
             vindices,
             flags: face_flags,
@@ -262,45 +261,6 @@ fn create_mesh_data_block(
     }
 }
 
-fn compute_render_mode_for_material(material: &gltf::material::Material) -> u32 {
-    // for example 0x400C41 (sofa1.v3m):
-    //   tex_src = 1, color_op = 2, alpha_op = 3, alpha_blend = 0, zbuffer_type = 5, fog = 0
-    // for example 0x518C41 (paper1.v3m, per1.v3m, ...):
-    //   tex_src = 1, color_op = 2, alpha_op = 3, alpha_blend = 3, zbuffer_type = 5, fog = 0
-    let mut tex_src = v3mc::TextureSource::Wrap;
-    if let Some(tex_info) = material.pbr_metallic_roughness().base_color_texture() {
-        use gltf::texture::WrappingMode;
-        let sampler = tex_info.texture().sampler();
-        if sampler.wrap_t() != sampler.wrap_s() {
-            eprintln!("Ignoring wrapT - wrapping mode must be the same for T and S");
-        }
-        if sampler.wrap_s() == WrappingMode::MirroredRepeat {
-            eprintln!("MirroredRepeat wrapping mode is not supported");
-        }
-
-        tex_src = if sampler.wrap_s() == WrappingMode::ClampToEdge {
-            v3mc::TextureSource::Clamp
-        } else {
-            v3mc::TextureSource::Wrap
-        };
-    }
-
-    let color_op = v3mc::ColorOp::Mul;
-    let alpha_op = v3mc::AlphaOp::Mul;
-
-    use gltf::material::AlphaMode;
-    let alpha_blend = match material.alpha_mode() {
-        AlphaMode::Blend => v3mc::AlphaBlend::AlphaBlendAlpha,
-        _ => v3mc::AlphaBlend::None,
-    };
-    let zbuffer_type = match material.alpha_mode() {
-        AlphaMode::Opaque => v3mc::ZbufferType::Full,
-        _ => v3mc::ZbufferType::FullAlphaTest,
-    };
-    let fog = v3mc::FogType::Type0;
-    v3mc::encode_render_mode(tex_src, color_op, alpha_op, alpha_blend, zbuffer_type, fog)
-}
-
 fn create_mesh_chunk(prim: &gltf::Primitive) -> std::io::Result<v3mc::MeshChunk> {
     
     if prim.mode() != gltf::mesh::Mode::Triangles {
@@ -337,7 +297,7 @@ fn create_mesh_chunk(prim: &gltf::Primitive) -> std::io::Result<v3mc::MeshChunk>
     let same_pos_vertex_offsets_alloc = (vertex_count * 2).try_into().unwrap();
     let wi_alloc = (vertex_count * 2 * 4).try_into().unwrap();
     let uvs_alloc = (vertex_count * 2 * 4).try_into().unwrap();
-    let render_mode = compute_render_mode_for_material(&prim.material());
+    let render_mode = material::compute_render_mode_for_material(&prim.material());
     Ok(v3mc::MeshChunk{
         num_vecs,
         num_faces,
@@ -348,18 +308,6 @@ fn create_mesh_chunk(prim: &gltf::Primitive) -> std::io::Result<v3mc::MeshChunk>
         uvs_alloc,
         render_mode,
     })
-}
-
-fn create_mesh_material_ref(material: &gltf::Material, lod_mesh_materials: &[gltf::Material]) -> v3mc::MeshTextureRef {
-    let material_index = lod_mesh_materials.iter()
-        .position(|m| m.index() == material.index())
-        .unwrap()
-        .try_into()
-        .unwrap();
-    v3mc::MeshTextureRef{
-        material_index,
-        tex_name: get_material_base_color_texture_name(material),
-    }
 }
 
 fn convert_mesh(
@@ -404,47 +352,6 @@ fn convert_mesh(
         num_prop_points,
         textures: tex_refs,
     })
-}
-
-fn change_texture_ext_to_tga(name: &str) -> String {
-    String::from(Path::new(name).with_extension("tga").file_name().unwrap().to_string_lossy())
-}
-
-fn get_material_base_color_texture_name(material: &gltf::material::Material) -> String {
-    if let Some(tex_info) = material.pbr_metallic_roughness().base_color_texture() {
-        let tex = tex_info.texture();
-        let img = tex.source();
-        if let Some(img_name) = img.name() {
-            return change_texture_ext_to_tga(img_name);
-        }
-        if let gltf::image::Source::Uri { uri, .. } = img.source() {
-            return change_texture_ext_to_tga(uri);
-        }
-    }
-    const DEFAULT_TEXTURE: &str = "Rck_Default.tga";
-    eprintln!("Cannot obtain texture name for material {} (materials without base color texture are not supported)",
-        material.index().unwrap_or(0));
-    DEFAULT_TEXTURE.into()
-}
-
-fn convert_material(mat: &gltf::Material) -> v3mc::Material {
-    let tex_name = get_material_base_color_texture_name(mat);
-    let self_illumination = get_material_self_illumination(mat);
-    let specular_level = mat.pbr_specular_glossiness()
-        .map(|spec_glos| spec_glos.specular_factor().iter().cloned().fold(0f32, f32::max))
-        .unwrap_or_else(|| mat.pbr_metallic_roughness().metallic_factor());
-    let glossiness = mat.pbr_specular_glossiness()
-        .map(|spec_glos| spec_glos.glossiness_factor())
-        .unwrap_or_else(|| 1.0 - mat.pbr_metallic_roughness().roughness_factor());
-
-    v3mc::Material{
-        tex_name,
-        self_illumination,
-        specular_level,
-        glossiness,
-        flags: 0x11,
-        ..v3mc::Material::default()
-    }
 }
 
 #[derive(Deserialize, Debug, Default)]
@@ -552,58 +459,6 @@ fn convert_cspheres(nodes: &[gltf::Node]) -> Vec<v3mc::ColSphere> {
     cspheres
 }
 
-fn get_joint_index(node: &gltf::Node, skin: &gltf::Skin) -> usize {
-    skin.joints().enumerate()
-        .filter(|(_i, n)| node.index() == n.index())
-        .map(|(i, _n)| i)
-        .next()
-        .expect("joint not found")
-}
-
-fn get_joint_parent<'a>(node: &gltf::Node, skin: &gltf::Skin<'a>) -> Option<gltf::Node<'a>> {
-    skin.joints().find(|n| n.children().any(|c| c.index() == node.index()))
-}
-
-fn convert_bone(n: &gltf::Node, inverse_bind_matrix: &[[f32; 4]; 4], index: usize, skin: &gltf::Skin) -> v3mc::Bone {
-    let name = n.name().map(&str::to_owned).unwrap_or_else(|| format!("bone_{}", index));
-    let parent_node_opt = get_joint_parent(n, skin);
-    let parent_index = parent_node_opt
-        .map(|pn| get_joint_index(&pn, skin) as i32)
-        .unwrap_or(-1);
-    let inv_transform = glam::Mat4::from_cols_array_2d(inverse_bind_matrix);
-    let (gltf_scale, gltf_rotation, gltf_translation) = inv_transform.to_scale_rotation_translation();
-    assert!((gltf_scale - glam::Vec3::ONE).max_element() < 0.01f32, "scale is not supported: {}", gltf_scale);
-    let base_rotation = gltf_to_rf_quat(quat_to_array(&gltf_rotation));
-    let base_translation = gltf_to_rf_vec(gltf_translation.to_array());
-    v3mc::Bone { name, base_rotation, base_translation, parent_index }
-}
-
-fn convert_bones(skin: &gltf::Skin, buffers: &[BufferData]) -> std::io::Result<Vec<v3mc::Bone>> {
-    let num_joints = skin.joints().count();
-    if num_joints > v3mc::MAX_BONES {
-        let err_msg = format!("too many bones: found {} but only {} are supported", num_joints, v3mc::MAX_BONES);
-        return Err(new_custom_error(err_msg));
-    }
-
-    let inverse_bind_matrices: Vec<_> = skin.reader(|buffer| Some(&buffers[buffer.index()]))
-        .read_inverse_bind_matrices()
-        .expect("expected inverse bind matrices")
-        .collect();
-
-    if inverse_bind_matrices.len() != num_joints {
-        let err_msg = format!("invalid number of inverse bind matrices: expected {}, got {}",
-            num_joints, inverse_bind_matrices.len());
-        return Err(new_custom_error(err_msg));
-    }
-
-    let mut bones = Vec::with_capacity(num_joints);
-    for (i, n) in skin.joints().enumerate() {
-        let bone = convert_bone(&n, &inverse_bind_matrices[i], i, skin);
-        bones.push(bone);
-    }
-    Ok(bones)
-}
-
 fn make_v3mc_file(doc: &gltf::Document, buffers: &[BufferData], is_character: bool) -> Result<v3mc::File, Box<dyn Error>> {
     let submesh_nodes = get_submesh_nodes(doc);
     println!("Found {} top-level mesh nodes", submesh_nodes.len());
@@ -616,7 +471,7 @@ fn make_v3mc_file(doc: &gltf::Document, buffers: &[BufferData], is_character: bo
     let cspheres = convert_cspheres(&csphere_nodes);
 
     let bones = if let Some(skin) = doc.skins().next() {
-        convert_bones(&skin, buffers)?
+        char_anim::convert_bones(&skin, buffers)?
     } else {
         Vec::new()
     };
@@ -640,160 +495,6 @@ fn generate_output_file_name(input_file_name: &str, output_file_name_opt: Option
         })
 }
 
-fn gltf_time_to_rfa_time(time_sec: f32) -> i32 {
-    (time_sec * 30.0f32 * 160.0f32) as i32
-}
-
-fn make_short_quat(quat: [f32; 4]) -> [i16; 4] {
-    quat.map(|x| (x * 16383.0f32) as i16)
-}
-
-fn get_node_anim_channels<'a>(n: &gltf::Node, anim: &'a gltf::Animation) -> impl Iterator<Item = gltf::animation::Channel<'a>> + 'a {
-    let node_index = n.index();
-    anim.channels()
-        .filter(move |c| c.target().node().index() == node_index)
-}
-
-fn convert_rotation_keys(n: &gltf::Node, anim: &gltf::Animation, buffers: &[BufferData]) -> Vec<rfa::RotationKey> {
-    get_node_anim_channels(n, anim)
-        .filter_map(|channel| {
-            let reader = channel.reader(|buffer| Some(&buffers[buffer.index()]));
-            let interpolation = channel.sampler().interpolation();
-            reader.read_inputs()
-                .map(|inputs| reader.read_outputs().map(|outputs| (inputs, outputs, interpolation)))
-                .flatten()
-        })
-        .filter_map(|(inputs, outputs, interpolation)| {
-            use gltf::animation::util::ReadOutputs;
-            match outputs {
-                ReadOutputs::Rotations(rotations) => Some((inputs, rotations, interpolation)),
-                _ => None,
-            }
-        })
-        .map(|(inputs, rotations, interpolation)| {
-            use gltf::animation::Interpolation;
-            let rotations_quads = rotations
-                .into_f32()
-                .map(|r| make_short_quat(gltf_to_rf_quat(r)));
-            let chunked_rotations = if interpolation == Interpolation::CubicSpline {
-                rotations_quads
-                    .collect::<Vec<_>>()
-                    .chunks(3)
-                    .map(|s| (s[0], s[1], s[2]))
-                    .collect::<Vec<_>>()
-            } else {
-                rotations_quads
-                    .map(|r| (r, r, r))
-                    .collect::<Vec<_>>()
-            };
-            inputs
-                .map(gltf_time_to_rfa_time)
-                .zip(chunked_rotations)
-                .map(|(time, (_, rotation, _))| rfa::RotationKey {
-                    time,
-                    rotation,
-                    ease_in: 0,
-                    ease_out: 0,
-                })
-                .collect::<Vec<_>>()
-        })
-        .next()
-        .unwrap_or_default()
-}
-
-fn convert_translation_keys(n: &gltf::Node, anim: &gltf::Animation, buffers: &[BufferData]) -> Vec<rfa::TranslationKey> {
-    get_node_anim_channels(n, anim)
-        .filter_map(|channel| {
-            let reader = channel.reader(|buffer| Some(&buffers[buffer.index()]));
-            let interpolation = channel.sampler().interpolation();
-            reader.read_inputs()
-                .map(|inputs| reader.read_outputs().map(|outputs| (inputs, outputs, interpolation)))
-                .flatten()
-        })
-        .filter_map(|(inputs, outputs, interpolation)| {
-            use gltf::animation::util::ReadOutputs;
-            match outputs {
-                ReadOutputs::Translations(translations) => Some((inputs, translations, interpolation)),
-                _ => None,
-            }
-        })
-        .map(|(inputs, translations, interpolation)| {
-            use gltf::animation::Interpolation;
-            let chunked_translations = if interpolation == Interpolation::CubicSpline {
-                translations
-                    .collect::<Vec<_>>()
-                    .chunks(3)
-                    .map(|s| (s[0], s[1], s[2]))
-                    .collect::<Vec<_>>()
-            } else {
-                translations
-                    .map(|t| (t, t, t))
-                    .collect::<Vec<_>>()
-            };
-            inputs
-                .map(gltf_time_to_rfa_time)
-                .zip(chunked_translations)
-                .map(|(time, (_, translation, _))|
-                    // ignore cubic spline tangents for now - RF uses bezier curve and tangents are different
-                    rfa::TranslationKey {
-                        time,
-                        in_tangent: translation,
-                        translation,
-                        out_tangent: translation,
-                    }
-                )
-                .collect::<Vec<_>>()
-        })
-        .next()
-        .unwrap_or_default()
-}
-
-fn determine_anim_time_range(bones: &[rfa::Bone]) -> (i32, i32) {
-    bones.iter()
-        .flat_map(|b| b.rotation_keys.iter()
-            .map(|k| k.time)
-            .chain(b.translation_keys.iter().map(|k| k.time)))
-        .fold((0i32, 0i32), |(min, max), time| (min.min(time), max.max(time)))
-}
-
-fn make_rfa(anim: &gltf::Animation, skin: &gltf::Skin, buffers: &[BufferData]) -> rfa::File {
-    let mut bones = Vec::with_capacity(skin.joints().count());
-    for n in skin.joints() {
-        let rotation_keys = convert_rotation_keys(&n, anim, buffers);
-        let translation_keys = convert_translation_keys(&n, anim, buffers);
-        bones.push(rfa::Bone {
-            weight: 1.0f32,
-            rotation_keys,
-            translation_keys,
-        });
-    }
-    let (start_time, end_time) = determine_anim_time_range(&bones);
-    let header = rfa::FileHeader {
-        num_bones: bones.len() as i32,
-        start_time,
-        end_time,
-        ramp_in_time: 480,
-        ramp_out_time: 480,
-        total_rotation: [0.0f32, 0.0f32, 0.0f32, 1.0f32],
-        total_translation: [0.0f32, 0.0f32, 0.0f32],
-        ..rfa::FileHeader::default()
-    };
-    rfa::File {
-        header,
-        bones,
-    }
-}
-
-fn convert_animation_to_rfa(anim: &gltf::Animation, index: usize, skin: &gltf::Skin, buffers: &[BufferData], output_dir: &Path) -> std::io::Result<()> {
-    let name = anim.name().map(&str::to_owned).unwrap_or_else(|| format!("anim_{}", index));
-    println!("Processing animation {}", name);
-    let file_name = output_dir.join(format!("{}.rfa", name));
-    let mut wrt = BufWriter::new(File::create(file_name)?);
-    let rfa = make_rfa(anim, skin, buffers);
-    rfa.write(&mut wrt)?;
-    Ok(())
-}
-
 fn convert_gltf_to_v3mc(input_file_name: &str, output_file_name_opt: Option<&str>) -> Result<(), Box<dyn Error>> {
     println!("Importing GLTF file {}...", input_file_name);
     let input_path = Path::new(input_file_name);
@@ -815,7 +516,7 @@ fn convert_gltf_to_v3mc(input_file_name: &str, output_file_name_opt: Option<&str
     let output_dir = Path::new(&output_file_name).parent().unwrap();
     if let Some(skin) = skin_opt {
         for (i, anim) in document.animations().enumerate() {
-            convert_animation_to_rfa(&anim, i, &skin, &buffers, output_dir)?;
+            char_anim::convert_animation_to_rfa(&anim, i, &skin, &buffers, output_dir)?;
         }
     }
 
