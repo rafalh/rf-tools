@@ -457,9 +457,12 @@ fn find_lod_nodes<'a>(node: &'a gltf::Node) -> Vec<(gltf::Node<'a>, f32)> {
     let mut child_node_dist_vec: Vec<(gltf::Node, f32)> = node.children()
         .filter(|n| n.mesh().is_some())
         .map(|n| {
-            let extras_raw: &serde_json::value::RawValue = n.extras().as_ref().unwrap();
-            let extras = serde_json::from_str::<NodeExtras>(extras_raw.get()).unwrap();
-            (n, extras.lod_distance)
+            let dist_opt = n.extras().as_ref()
+                .map(|e| serde_json::from_str::<NodeExtras>(e.get()).ok())
+                .flatten()
+                .map(|e| e.lod_distance)
+                .flatten();
+            (n, dist_opt)
         })
         .filter(|(n, d)| {
             if d.is_none() {
