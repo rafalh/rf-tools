@@ -384,23 +384,17 @@ fn convert_prop_point(node: &gltf::Node, transform: &glam::Mat4, parent_index: i
     }
 }
 
-fn is_joint(node: &gltf::Node, skin: &gltf::Skin) -> bool {
-    skin.joints().any(|joint| node.index() == joint.index())
-}
-
 fn get_prop_points(parent: &gltf::Node, transform: &glam::Mat4) -> Vec<v3mc::PropPoint> {
     let mut prop_points = parent.children()
         .filter(|n| n.mesh().is_none())
         .map(|n| convert_prop_point(&n, transform, -1))
         .collect::<Vec<_>>();
     if let Some(skin) = parent.skin() {
-        prop_points.extend(skin.joints()
-            .flat_map(|joint| joint.children().map(move |n| (n, joint.index())))
-            .filter(|(node, _)| !is_joint(node, &skin))
+        prop_points.extend(char_anim::get_nodes_parented_to_bones(&skin)
             .filter(|(node, _)| node.mesh().is_none())
             .filter(|(node, _)| node.name().is_some())
             .map(|(node, parent_index)|
-                convert_prop_point(&node, &glam::Mat4::IDENTITY, parent_index as i32)
+                convert_prop_point(&node, &glam::Mat4::IDENTITY, parent_index)
             )
         );
     }
@@ -417,13 +411,11 @@ fn get_cspheres(doc: &gltf::Document) -> Vec<v3mc::ColSphere> {
         .map(|n| convert_csphere(&n, -1))
         .collect::<Vec<_>>();
     if let Some(skin) = doc.skins().next() {
-        cspheres.extend(skin.joints()
-            .flat_map(|joint| joint.children().map(move |n| (n, joint.index())))
-            .filter(|(node, _)| !is_joint(node, &skin))
+        cspheres.extend(char_anim::get_nodes_parented_to_bones(&skin)
             .filter(|(node, _)| is_csphere(node))
             .filter(|(node, _)| node.name().is_some())
             .map(|(node, parent_index)|
-                convert_csphere(&node, parent_index as i32)
+                convert_csphere(&node, parent_index)
             )
         );
     }

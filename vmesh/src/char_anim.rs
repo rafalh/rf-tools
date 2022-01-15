@@ -232,3 +232,16 @@ pub(crate) fn convert_bones(skin: &gltf::Skin, buffers: &[BufferData]) -> std::i
     }
     Ok(bones)
 }
+
+fn is_joint(node: &gltf::Node, skin: &gltf::Skin) -> bool {
+    skin.joints().any(|joint| node.index() == joint.index())
+}
+
+pub(crate) fn get_nodes_parented_to_bones<'a>(skin: &'a gltf::Skin) -> impl Iterator<Item = (gltf::Node<'a>, i32)> {
+    skin.joints()
+        .flat_map(move |joint| {
+            let joint_index = get_joint_index(&joint, &skin) as i32;
+            joint.children().map(move |n| (n, joint_index))
+        })
+        .filter(move |(node, _)| !is_joint(node, &skin))
+}
