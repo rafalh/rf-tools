@@ -399,6 +399,7 @@ impl WeightIndexArray {
     }
 }
 
+#[derive(Clone, Debug)]
 pub struct PropPoint {
     pub name: String,
     pub orient: [f32; 4],
@@ -416,6 +417,7 @@ impl PropPoint {
     }
 }
 
+#[derive(Clone, Debug)]
 pub struct ColSphere {
     pub name: String,
     pub parent_index: i32,
@@ -433,6 +435,7 @@ impl ColSphere {
     }
 }
 
+#[derive(Clone, Debug)]
 pub struct Bone {
     pub name: String,
     pub base_rotation: [f32; 4],

@@ -9,6 +9,7 @@ mod material;
 use std::io::Cursor;
 use std::fs::File;
 use std::io::BufWriter;
+use std::ops::Mul;
 use std::vec::Vec;
 use std::env;
 use std::convert::TryInto;
@@ -57,10 +58,6 @@ fn get_submesh_nodes(doc: &gltf::Document) -> Vec<gltf::Node> {
 
 fn get_csphere_nodes(doc: &gltf::Document) -> Vec<gltf::Node> {
     doc.nodes().filter(|n| n.mesh().is_none()).filter(|n| n.name().unwrap_or("").starts_with("csphere_")).collect()
-}
-
-fn get_prop_point_nodes<'a>(parent: &gltf::Node<'a>) -> impl Iterator<Item = gltf::Node<'a>> {
-    parent.children().filter(|n| n.mesh().is_none() && n.name().is_some())
 }
 
 fn get_mesh_materials<'a>(mesh: &gltf::Mesh<'a>) -> Vec<gltf::Material<'a>> {
@@ -235,28 +232,18 @@ fn create_mesh_chunk_data(prim: &gltf::Primitive, buffers: &[BufferData],
     }
 }
 
-fn create_prop_point(node: &gltf::Node, transform: &Matrix3) -> v3mc::PropPoint {
-    let (translation, rotation, _scale) = node.transform().decomposed();
-    v3mc::PropPoint{
-        name: node.name().expect("prop point name is missing").to_string(),
-        orient: gltf_to_rf_quat(rotation),
-        pos: gltf_to_rf_vec(transform_point(&translation, transform)),
-        parent_index: -1,
-    }
-}
-
 fn create_mesh_data_block(
     mesh: &gltf::Mesh, 
     buffers: &[BufferData], 
     transform: &Matrix3, 
     mesh_materials: &[gltf::Material], 
-    prop_points_nodes: &[gltf::Node],
+    prop_points: &[v3mc::PropPoint],
     is_character: bool
 ) -> v3mc::MeshDataBlock {
     v3mc::MeshDataBlock{
         chunks: mesh.primitives().map(|prim| create_mesh_chunk_info(&prim, mesh_materials)).collect(),
         chunks_data: mesh.primitives().map(|prim| create_mesh_chunk_data(&prim, buffers, transform, is_character)).collect(),
-        prop_points: prop_points_nodes.iter().map(|prop| create_prop_point(prop, transform)).collect(),
+        prop_points: prop_points.to_vec(),
     }
 }
 
@@ -313,7 +300,7 @@ fn convert_mesh(
     node: &gltf::Node, 
     buffers: &[BufferData], 
     lod_mesh_materials: &[gltf::Material],
-    prop_point_nodes: &[gltf::Node],
+    prop_points: &[v3mc::PropPoint],
     transform: &Matrix3,
     is_character: bool
 ) -> std::io::Result<v3mc::Mesh> {
@@ -334,11 +321,11 @@ fn convert_mesh(
     }
 
     let mut data_block_cur = Cursor::new(Vec::<u8>::new());
-    create_mesh_data_block(&mesh, buffers, transform, &materials, prop_point_nodes, is_character)
+    create_mesh_data_block(&mesh, buffers, transform, &materials, prop_points, is_character)
         .write(&mut data_block_cur)?;
     let data_block: Vec::<u8> = data_block_cur.into_inner();
     
-    let num_prop_points = prop_point_nodes.len() as i32;
+    let num_prop_points = prop_points.len() as i32;
     let tex_refs: Vec<_> = materials.iter()
         .map(|m| create_mesh_material_ref(m, lod_mesh_materials))
         .collect();
@@ -384,6 +371,46 @@ fn find_lod_nodes<'a>(node: &'a gltf::Node) -> Vec<(gltf::Node<'a>, f32)> {
     child_node_dist_vec
 }
 
+fn get_node_local_transform(node: &gltf::Node) -> glam::Mat4 {
+    glam::Mat4::from_cols_array_2d(&node.transform().matrix())
+}
+
+fn convert_prop_point(node: &gltf::Node, transform: &glam::Mat4, parent_index: i32) -> v3mc::PropPoint {
+    let local_transform = get_node_local_transform(node);
+    let (_scale, rotation, translation) = transform.mul(local_transform)
+        .to_scale_rotation_translation();
+
+    v3mc::PropPoint{
+        name: node.name().expect("prop point name is missing").to_string(),
+        orient: gltf_to_rf_quat(rotation.into()),
+        pos: gltf_to_rf_vec(translation.into()),
+        parent_index,
+    }
+}
+
+fn is_joint(node: &gltf::Node, skin: &gltf::Skin) -> bool {
+    skin.joints().any(|joint| node.index() == joint.index())
+}
+
+fn get_prop_points(parent: &gltf::Node, transform: &glam::Mat4) -> Vec<v3mc::PropPoint> {
+    let mut prop_points = parent.children()
+        .filter(|n| n.mesh().is_none())
+        .map(|n| convert_prop_point(&n, transform, -1))
+        .collect::<Vec<_>>();
+    if let Some(skin) = parent.skin() {
+        prop_points.extend(skin.joints()
+            .flat_map(|joint| joint.children().map(move |n| (n, joint.index())))
+            .filter(|(node, _)| !is_joint(node, &skin))
+            .filter(|(node, _)| node.mesh().is_none())
+            .filter(|(node, _)| node.name().is_some())
+            .map(|(node, parent_index)| 
+                convert_prop_point(&node, &glam::Mat4::IDENTITY, parent_index as i32)
+            )
+        );
+    }
+    prop_points
+}
+
 fn convert_lod_mesh(node: &gltf::Node, buffers: &[BufferData], is_character: bool) -> Result<v3mc::LodMesh, Box<dyn Error>> {
     let node_transform = glam::Mat4::from_cols_array_2d(&node.transform().matrix()).to_cols_array_2d();
 
@@ -406,7 +433,8 @@ fn convert_lod_mesh(node: &gltf::Node, buffers: &[BufferData], is_character: boo
     let offset = gltf_to_rf_vec(origin);
     let radius = compute_mesh_bounding_sphere_radius(&mesh, buffers, &rot_scale_mat);
 
-    let prop_point_nodes: Vec<_> = get_prop_point_nodes(node).collect();
+    let transform = glam::Mat4::from_mat3(glam::Mat3::from_cols_array_2d(&rot_scale_mat));
+    let prop_points = get_prop_points(node, &transform);
 
     let mut gltf_materials: Vec<_> = child_node_dist_vec.iter()
         .flat_map(|(n, _)| get_mesh_materials(&n.mesh().unwrap()))
@@ -417,7 +445,7 @@ fn convert_lod_mesh(node: &gltf::Node, buffers: &[BufferData], is_character: boo
     let mut meshes: Vec<_> = Vec::with_capacity(child_node_dist_vec.len());
     for (n, d) in &child_node_dist_vec {
         println!("Processing node {} name {} distance {}", n.index(), n.name().unwrap_or("<unnamed>"), d);
-        meshes.push(convert_mesh(n, buffers, &gltf_materials, &prop_point_nodes, &rot_scale_mat, is_character)?);
+        meshes.push(convert_mesh(n, buffers, &gltf_materials, &prop_points, &rot_scale_mat, is_character)?);
     }
 
     Ok(v3mc::LodMesh{
