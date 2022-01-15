@@ -56,10 +56,6 @@ fn get_submesh_nodes(doc: &gltf::Document) -> Vec<gltf::Node> {
     doc.nodes().filter(|n| n.mesh().is_some() && !child_indices.contains(&n.index())).collect()
 }
 
-fn get_csphere_nodes(doc: &gltf::Document) -> Vec<gltf::Node> {
-    doc.nodes().filter(|n| n.mesh().is_none()).filter(|n| n.name().unwrap_or("").starts_with("csphere_")).collect()
-}
-
 fn get_mesh_materials<'a>(mesh: &gltf::Mesh<'a>) -> Vec<gltf::Material<'a>> {
     let mut materials = mesh.primitives().map(|prim| prim.material())
         .collect::<Vec<_>>();
@@ -403,12 +399,48 @@ fn get_prop_points(parent: &gltf::Node, transform: &glam::Mat4) -> Vec<v3mc::Pro
             .filter(|(node, _)| !is_joint(node, &skin))
             .filter(|(node, _)| node.mesh().is_none())
             .filter(|(node, _)| node.name().is_some())
-            .map(|(node, parent_index)| 
+            .map(|(node, parent_index)|
                 convert_prop_point(&node, &glam::Mat4::IDENTITY, parent_index as i32)
             )
         );
     }
     prop_points
+}
+
+fn is_csphere(node: &gltf::Node) -> bool {
+    node.mesh().is_none() && node.name().unwrap_or_default().starts_with("csphere_")
+}
+
+fn get_cspheres(doc: &gltf::Document) -> Vec<v3mc::ColSphere> {
+    let mut cspheres = doc.nodes()
+        .filter(is_csphere)
+        .map(|n| convert_csphere(&n, -1))
+        .collect::<Vec<_>>();
+    if let Some(skin) = doc.skins().next() {
+        cspheres.extend(skin.joints()
+            .flat_map(|joint| joint.children().map(move |n| (n, joint.index())))
+            .filter(|(node, _)| !is_joint(node, &skin))
+            .filter(|(node, _)| is_csphere(node))
+            .filter(|(node, _)| node.name().is_some())
+            .map(|(node, parent_index)|
+                convert_csphere(&node, parent_index as i32)
+            )
+        );
+    }
+    cspheres
+}
+
+fn convert_csphere(node: &gltf::Node, parent_index: i32) -> v3mc::ColSphere {
+    let name = node.name().expect("csphere name is missing").to_owned();
+    let transform = get_node_local_transform(node);
+    let (scale, _rotation, translation) = transform.to_scale_rotation_translation();
+    let radius = scale.max_element();
+    v3mc::ColSphere{
+        name,
+        parent_index,
+        pos: gltf_to_rf_vec(translation.into()),
+        radius,
+    }
 }
 
 fn convert_lod_mesh(node: &gltf::Node, buffers: &[BufferData], is_character: bool) -> Result<v3mc::LodMesh, Box<dyn Error>> {
@@ -462,29 +494,11 @@ fn convert_lod_mesh(node: &gltf::Node, buffers: &[BufferData], is_character: boo
     })
 }
 
-fn convert_csphere(node: &gltf::Node, index: usize) -> v3mc::ColSphere {
-    let name = node.name()
-        .map_or_else(|| format!("csphere_{}", index), &str::to_owned);
-    let transform = glam::Mat4::from_cols_array_2d(&node.transform().matrix());
-    let (scale, _rotation, translation) = transform.to_scale_rotation_translation();
-    let radius = scale.max_element();
-    v3mc::ColSphere{
-        name,
-        parent_index: -1,
-        pos: gltf_to_rf_vec(translation.into()),
-        radius,
-    }
-}
-
-fn convert_cspheres(nodes: &[gltf::Node]) -> Vec<v3mc::ColSphere> {
-    let mut cspheres = Vec::with_capacity(nodes.len());
-    for (i, n) in nodes.iter().enumerate() {
-        cspheres.push(convert_csphere(n, i));
-    }
-    cspheres
-}
-
 fn make_v3mc_file(doc: &gltf::Document, buffers: &[BufferData], is_character: bool) -> Result<v3mc::File, Box<dyn Error>> {
+    if doc.skins().count() > 1 {
+        eprintln!("Warning! There is more than one skin defined. Only first skin will be used.");
+    }
+
     let submesh_nodes = get_submesh_nodes(doc);
     println!("Found {} top-level mesh nodes", submesh_nodes.len());
     let mut lod_meshes = Vec::with_capacity(submesh_nodes.len());
@@ -492,12 +506,8 @@ fn make_v3mc_file(doc: &gltf::Document, buffers: &[BufferData], is_character: bo
         lod_meshes.push(convert_lod_mesh(n, buffers, is_character)?);
     }
 
-    let csphere_nodes = get_csphere_nodes(doc);
-    let cspheres = convert_cspheres(&csphere_nodes);
+    let cspheres = get_cspheres(doc);
 
-    if doc.skins().count() > 1 {
-        eprintln!("Warning! There is more than one skin defined. Only first skin will be used.");
-    }
     let bones = if let Some(skin) = doc.skins().next() {
         char_anim::convert_bones(&skin, buffers)?
     } else {
