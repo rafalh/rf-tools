@@ -157,8 +157,9 @@ fn make_rfa(anim: &gltf::Animation, skin: &gltf::Skin, buffers: &[BufferData]) -
     }
     let (start_time, end_time) = determine_anim_time_range(&bones);
     let is_death_anim = anim.name().unwrap_or_default().contains("death");
-    let ramp_in_time = 480;
-    let ramp_out_time = if is_death_anim { 0 } else { 480 };
+    let duration = end_time - start_time;
+    let ramp_in_time = 480.min(duration / 2);
+    let ramp_out_time = if is_death_anim { 0 } else { ramp_in_time };
     let header = rfa::FileHeader {
         num_bones: bones.len() as i32,
         start_time,
