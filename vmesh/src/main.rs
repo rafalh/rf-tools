@@ -341,9 +341,9 @@ struct NodeExtras {
     lod_distance: Option<f32>,
 }
 
-fn get_node_extras(node: &gltf::Node) -> NodeExtras {
+pub(crate) fn get_node_extras<'a, T: serde::Deserialize<'a> + Default>(node: &'a gltf::Node) -> T {
     node.extras().as_ref()
-        .and_then(|raw| serde_json::from_str::<NodeExtras>(raw.get()).ok())
+        .and_then(|raw| serde_json::from_str::<T>(raw.get()).ok())
         .unwrap_or_default()
 }
 
@@ -351,7 +351,7 @@ fn find_lod_nodes<'a>(node: &'a gltf::Node) -> Vec<(gltf::Node<'a>, f32)> {
     let mut child_node_dist_vec: Vec<(gltf::Node, f32)> = node.children()
         .filter(|n| n.mesh().is_some())
         .map(|n| {
-            let dist_opt = get_node_extras(&n).lod_distance;
+            let dist_opt = get_node_extras::<NodeExtras>(&n).lod_distance;
             (n, dist_opt)
         })
         .filter_map(|(n, dist_opt)| {

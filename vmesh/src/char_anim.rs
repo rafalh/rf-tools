@@ -3,11 +3,40 @@ use std::io::BufWriter;
 use std::vec::Vec;
 use std::f32;
 use std::path::Path;
+use std::collections::BTreeMap;
 use gltf::animation::Interpolation;
 use gltf::animation::util::{ReadInputs, ReadOutputs};
-use crate::{rfa, v3mc, gltf_to_rf_quat, gltf_to_rf_vec};
+use serde_json::Value;
+use serde_derive::Deserialize;
+use crate::{rfa, v3mc, gltf_to_rf_quat, gltf_to_rf_vec, get_node_extras};
 use crate::import::BufferData;
 use crate::io_utils::new_custom_error;
+
+#[derive(Deserialize, Debug, Default)]
+struct JointExtras {
+    #[serde(flatten)]
+    map: BTreeMap<String, Value>,
+}
+
+impl JointExtras {
+    fn get_ramp_in_time(&self, anim_name: &str) -> Option<f32> {
+        self.get_float(&format!("ramp_in_time.{}", anim_name))
+    }
+
+    fn get_ramp_out_time(&self, anim_name: &str) -> Option<f32> {
+        self.get_float(&format!("ramp_out_time.{}", anim_name))
+    }
+
+    fn get_anim_weight(&self, anim_name: &str) -> Option<f32> {
+        self.get_float(&format!("weight.{}", anim_name))
+    }
+
+    fn get_float(&self, key: &str) -> Option<f32> {
+        self.map.get(key)
+            .and_then(|v| v.as_f64())
+            .map(|v| v as f32)
+    }
+}
 
 fn gltf_time_to_rfa_time(time_sec: f32) -> i32 {
     (time_sec * 30.0_f32 * 160.0_f32) as i32
@@ -22,8 +51,6 @@ fn get_node_anim_channels<'a>(n: &gltf::Node, anim: &'a gltf::Animation) -> impl
     anim.channels()
         .filter(move |c| c.target().node().index() == node_index)
 }
-
-
 
 fn get_node_anim_data<'a>(
     n: &gltf::Node, anim: &'a gltf::Animation, buffers: &'a [BufferData]
@@ -167,7 +194,9 @@ fn convert_bone_anim(node: &gltf::Node, anim: &gltf::Animation, buffers: &[Buffe
     let rotation_keys = convert_rotation_keys(node, anim, buffers);
     let translation_keys = convert_translation_keys(node, anim, buffers);
     check_for_scale_channels(node, anim, buffers);
-    let weight = determine_anim_weight(&rotation_keys, &translation_keys);
+    let extras = get_node_extras::<JointExtras>(node);
+    let weight = extras.get_anim_weight(anim.name().unwrap_or_default())
+        .unwrap_or_else(|| determine_anim_weight(&rotation_keys, &translation_keys));
     rfa::Bone {
         weight,
         rotation_keys,
@@ -175,12 +204,40 @@ fn convert_bone_anim(node: &gltf::Node, anim: &gltf::Animation, buffers: &[Buffe
     }
 }
 
-fn determine_ramp_in_time(anim: &gltf::Animation) -> i32 {
+fn get_default_ramp_in_time(anim: &gltf::Animation) -> i32 {
     if is_death_anim(anim) { 800 } else { 480 }
 }
 
-fn determine_ramp_out_time(anim: &gltf::Animation) -> i32 {
+fn get_default_ramp_out_time(anim: &gltf::Animation) -> i32 {
     if is_death_anim(anim) { 0 } else { 480 }
+}
+
+fn determine_ramp_in_time(anim: &gltf::Animation, root_joint_extras: &JointExtras, duration: i32) -> i32 {
+    let anim_name = anim.name().unwrap_or_default();
+    root_joint_extras.get_ramp_in_time(anim_name)
+        .map(gltf_time_to_rfa_time)
+        .unwrap_or_else(|| get_default_ramp_in_time(anim).min(duration / 2))
+}
+
+fn determine_ramp_out_time(anim: &gltf::Animation, root_joint_extras: &JointExtras, duration: i32) -> i32 {
+    let anim_name = anim.name().unwrap_or_default();
+    root_joint_extras.get_ramp_out_time(anim_name)
+        .map(gltf_time_to_rfa_time)
+        .unwrap_or_else(|| get_default_ramp_out_time(anim).min(duration / 2))
+}
+
+fn is_root_joint(node: &gltf::Node) -> bool {
+    node.name().unwrap_or_default().to_lowercase().ends_with("root")
+}
+
+fn find_root_joint<'a>(skin: &'a gltf::Skin) -> Option<gltf::Node<'a>> {
+    skin.joints().filter(is_root_joint).next()
+}
+
+fn get_root_joint_extras(skin: &gltf::Skin) -> JointExtras {
+    find_root_joint(skin)
+        .map(|n| get_node_extras::<JointExtras>(&n))
+        .unwrap_or_default()
 }
 
 fn make_rfa(anim: &gltf::Animation, skin: &gltf::Skin, buffers: &[BufferData]) -> rfa::File {
@@ -190,9 +247,10 @@ fn make_rfa(anim: &gltf::Animation, skin: &gltf::Skin, buffers: &[BufferData]) -
     }
     let (start_time, end_time) = determine_anim_time_range(&bones);
     let duration = end_time - start_time;
-    let max_ramp_time = duration / 2;
-    let ramp_in_time = determine_ramp_in_time(anim).min(max_ramp_time);
-    let ramp_out_time = determine_ramp_out_time(anim).min(max_ramp_time);
+    let root_joint_extras = get_root_joint_extras(skin);
+    let ramp_in_time = determine_ramp_in_time(anim, &root_joint_extras, duration);
+    println!("ramp_in_time {}", ramp_in_time);
+    let ramp_out_time = determine_ramp_out_time(anim, &root_joint_extras, duration);
     let header = rfa::FileHeader {
         num_bones: bones.len() as i32,
         start_time,
