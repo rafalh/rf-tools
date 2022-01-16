@@ -182,12 +182,11 @@ fn make_rfa(anim: &gltf::Animation, skin: &gltf::Skin, buffers: &[BufferData]) -
 
 pub(crate) fn convert_animation_to_rfa(anim: &gltf::Animation, index: usize, skin: &gltf::Skin, buffers: &[BufferData], output_dir: &Path) -> std::io::Result<()> {
     let name = anim.name().map_or_else(|| format!("anim_{}", index), &str::to_owned);
-    println!("Processing animation: {}", name);
     let file_name = output_dir.join(format!("{}.rfa", name));
+    println!("Exporting animation: {} -> {}", name, file_name.display());
     let mut wrt = BufWriter::new(File::create(&file_name)?);
     let rfa = make_rfa(anim, skin, buffers);
     rfa.write(&mut wrt)?;
-    println!("Animation saved: {}", file_name.display());
     Ok(())
 }
 
@@ -239,7 +238,7 @@ pub(crate) fn convert_bones(skin: &gltf::Skin, buffers: &[BufferData]) -> std::i
         let bone = convert_bone(&n, &inverse_bind_matrices[i], i, skin);
         bones.push(bone);
     }
-    println!("Converted {} bones", bones.len());
+    println!("Found {} bones", bones.len());
     Ok(bones)
 }
 

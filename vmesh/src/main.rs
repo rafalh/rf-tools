@@ -397,7 +397,7 @@ fn get_prop_points(parent: &gltf::Node, transform: &glam::Mat4) -> Vec<v3mc::Pro
             )
         );
     }
-    println!("Converted {} prop points", prop_points.len());
+    println!("Found {} prop points", prop_points.len());
     prop_points
 }
 
@@ -419,7 +419,7 @@ fn get_cspheres(doc: &gltf::Document) -> Vec<v3mc::ColSphere> {
             )
         );
     }
-    println!("Converted {} cspheres", cspheres.len());
+    println!("Found {} cspheres", cspheres.len());
     cspheres
 }
 
@@ -493,7 +493,6 @@ fn make_v3mc_file(doc: &gltf::Document, buffers: &[BufferData], is_character: bo
     }
 
     let submesh_nodes = get_submesh_nodes(doc);
-    println!("Found {} LOD group nodes", submesh_nodes.len());
     let mut lod_meshes = Vec::with_capacity(submesh_nodes.len());
     for n in &submesh_nodes {
         lod_meshes.push(convert_lod_mesh(n, buffers, is_character)?);
@@ -526,23 +525,22 @@ fn generate_output_file_name(input_file_name: &str, output_file_name_opt: Option
 }
 
 fn convert_gltf_to_v3mc(input_file_name: &str, output_file_name_opt: Option<&str>) -> Result<(), Box<dyn Error>> {
-    println!("Importing GLTF file {}...", input_file_name);
+    println!("Importing GLTF file: {}", input_file_name);
     let input_path = Path::new(input_file_name);
     let gltf = gltf::Gltf::open(input_path)?;
     let gltf::Gltf { document, blob } = gltf;
 
-    println!("Importing GLTF buffers...");
+    println!("Importing GLTF buffers");
     let buffers = import::import_buffer_data(&document, input_path.parent(), blob)?;
     
-    println!("Converting...");
     let skin_opt = document.skins().next();
     let is_character = skin_opt.is_some();
     let output_file_name = generate_output_file_name(input_file_name, output_file_name_opt, is_character);
+    println!("Exporting mesh: {}", output_file_name);
     let v3m = make_v3mc_file(&document, &buffers, is_character)?;
     let file = File::create(&output_file_name)?;
     let mut wrt = BufWriter::new(file);
     v3m.write(&mut wrt)?;
-    println!("Mesh saved: {}", output_file_name);
 
     let output_dir = Path::new(&output_file_name).parent().unwrap();
     if let Some(skin) = skin_opt {
@@ -551,7 +549,6 @@ fn convert_gltf_to_v3mc(input_file_name: &str, output_file_name_opt: Option<&str
         }
     }
 
-    println!("Converted successfully.");
     Ok(())
 }
 
