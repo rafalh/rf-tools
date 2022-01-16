@@ -231,7 +231,7 @@ fn is_root_joint(node: &gltf::Node) -> bool {
 }
 
 fn find_root_joint<'a>(skin: &'a gltf::Skin) -> Option<gltf::Node<'a>> {
-    skin.joints().filter(is_root_joint).next()
+    skin.joints().find(is_root_joint)
 }
 
 fn get_root_joint_extras(skin: &gltf::Skin) -> JointExtras {
