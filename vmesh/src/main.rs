@@ -243,7 +243,7 @@ fn create_mesh_data_block(
     }
 }
 
-fn create_mesh_chunk(prim: &gltf::Primitive) -> std::io::Result<v3mc::MeshChunk> {
+fn create_mesh_chunk(prim: &gltf::Primitive, index: usize) -> std::io::Result<v3mc::MeshChunk> {
     
     if prim.mode() != gltf::mesh::Mode::Triangles {
         return Err(new_custom_error("only triangle list primitives are supported"));
@@ -252,23 +252,22 @@ fn create_mesh_chunk(prim: &gltf::Primitive) -> std::io::Result<v3mc::MeshChunk>
         return Err(new_custom_error("not indexed geometry is not supported"));
     }
 
-    let index_count = prim.indices().unwrap().count();
-    assert!(index_count % 3 == 0, "number of indices is not a multiple of three: {}", index_count);
-    println!("Index count: {}", index_count);
-
-    let tri_count = index_count / 3;
     let vertex_count = get_primitive_vertex_count(prim);
-    println!("Vertex count: {}", vertex_count);
+    let vertex_limit = 6000 - 768;
+
+    let index_count = prim.indices().unwrap().count();
+    let index_limit = 10000 - 768;
+    assert!(index_count % 3 == 0, "number of indices is not a multiple of three: {}", index_count);
+    let tri_count = index_count / 3;
+
+    println!("Primitive #{}: vertices {}/{}, indices {}/{}", index, vertex_count, vertex_limit, index_count, index_limit);
 
     if env::var("IGNORE_GEOMETRY_LIMITS").is_err() {
-        let index_limit = 10000 - 768;
-        if index_count > index_limit {
-            return Err(new_custom_error(format!("primitive has too many indices: {} (limit {})", index_count, index_limit)));
-        }
-
-        let vertex_limit = 6000 - 768;
         if vertex_count > vertex_limit {
             return Err(new_custom_error(format!("primitive has too many vertices: {} (limit {})", vertex_count, vertex_limit)));
+        }
+        if index_count > index_limit {
+            return Err(new_custom_error(format!("primitive has too many indices: {} (limit {})", index_count, index_limit)));
         }
     }
 
@@ -312,8 +311,8 @@ fn convert_mesh(
     }
 
     let mut chunks = Vec::new();
-    for prim in mesh.primitives() {
-        chunks.push(create_mesh_chunk(&prim)?);
+    for (i, prim) in mesh.primitives().enumerate() {
+        chunks.push(create_mesh_chunk(&prim, i)?);
     }
 
     let mut data_block_cur = Cursor::new(Vec::<u8>::new());
@@ -398,6 +397,7 @@ fn get_prop_points(parent: &gltf::Node, transform: &glam::Mat4) -> Vec<v3mc::Pro
             )
         );
     }
+    println!("Converted {} prop points", prop_points.len());
     prop_points
 }
 
@@ -419,6 +419,7 @@ fn get_cspheres(doc: &gltf::Document) -> Vec<v3mc::ColSphere> {
             )
         );
     }
+    println!("Converted {} cspheres", cspheres.len());
     cspheres
 }
 
@@ -440,7 +441,7 @@ fn convert_lod_mesh(node: &gltf::Node, buffers: &[BufferData], is_character: boo
 
     let mesh = node.mesh().unwrap();
     let name = node.name().unwrap_or("Default").to_string();
-    println!("Processing top-level node {} ({})", node.index(), name);
+    println!("Processing LOD group: node #{} '{}'", node.index(), name);
 
     let parent_name = "None".to_string();
     let version = v3mc::MeshDataBlock::VERSION;
@@ -467,8 +468,8 @@ fn convert_lod_mesh(node: &gltf::Node, buffers: &[BufferData], is_character: boo
     let materials: Vec<_> = gltf_materials.iter().map(convert_material).collect();
 
     let mut meshes: Vec<_> = Vec::with_capacity(child_node_dist_vec.len());
-    for (n, d) in &child_node_dist_vec {
-        println!("Processing node {} name {} distance {}", n.index(), n.name().unwrap_or("<unnamed>"), d);
+    for (i, (n, d)) in child_node_dist_vec.iter().enumerate() {
+        println!("Processing LOD{} mesh: node #{} '{}', distance {}", i, n.index(), n.name().unwrap_or("<unnamed>"), d);
         meshes.push(convert_mesh(n, buffers, &gltf_materials, &prop_points, &rot_scale_mat, is_character)?);
     }
 
@@ -492,7 +493,7 @@ fn make_v3mc_file(doc: &gltf::Document, buffers: &[BufferData], is_character: bo
     }
 
     let submesh_nodes = get_submesh_nodes(doc);
-    println!("Found {} top-level mesh nodes", submesh_nodes.len());
+    println!("Found {} LOD group nodes", submesh_nodes.len());
     let mut lod_meshes = Vec::with_capacity(submesh_nodes.len());
     for n in &submesh_nodes {
         lod_meshes.push(convert_lod_mesh(n, buffers, is_character)?);
@@ -541,6 +542,7 @@ fn convert_gltf_to_v3mc(input_file_name: &str, output_file_name_opt: Option<&str
     let file = File::create(&output_file_name)?;
     let mut wrt = BufWriter::new(file);
     v3m.write(&mut wrt)?;
+    println!("Mesh saved: {}", output_file_name);
 
     let output_dir = Path::new(&output_file_name).parent().unwrap();
     if let Some(skin) = skin_opt {
