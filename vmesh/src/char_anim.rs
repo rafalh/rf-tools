@@ -143,15 +143,44 @@ fn check_for_scale_channels(n: &gltf::Node, anim: &gltf::Animation, buffers: &[B
     }
 }
 
+fn is_death_anim(anim: &gltf::Animation) -> bool {
+    anim.name().unwrap_or_default().contains("death")
+}
+
+fn are_all_anim_keys_equal(rotation_keys: &[rfa::RotationKey], translation_keys: &[rfa::TranslationKey]) -> bool {
+    let initial_rotation = rotation_keys.iter().next().map(|rk| rk.rotation);
+    let initial_translation = translation_keys.iter().next().map(|tk| tk.translation);
+    let rotation_keys_equal = rotation_keys.iter().all(|rk| Some(rk.rotation) == initial_rotation);
+    let translation_keys_equal = translation_keys.iter().all(|tk| Some(tk.translation) == initial_translation);
+    rotation_keys_equal && translation_keys_equal
+}
+
+fn determine_anim_weight(rotation_keys: &[rfa::RotationKey], translation_keys: &[rfa::TranslationKey]) -> f32 {
+    if are_all_anim_keys_equal(rotation_keys, translation_keys) {
+        2.0
+    } else {
+        10.0
+    }
+}
+
 fn convert_bone_anim(node: &gltf::Node, anim: &gltf::Animation, buffers: &[BufferData]) -> rfa::Bone {
     let rotation_keys = convert_rotation_keys(node, anim, buffers);
     let translation_keys = convert_translation_keys(node, anim, buffers);
     check_for_scale_channels(node, anim, buffers);
+    let weight = determine_anim_weight(&rotation_keys, &translation_keys);
     rfa::Bone {
-        weight: 1.0_f32,
+        weight,
         rotation_keys,
         translation_keys,
     }
+}
+
+fn determine_ramp_in_time(anim: &gltf::Animation) -> i32 {
+    if is_death_anim(anim) { 800 } else { 480 }
+}
+
+fn determine_ramp_out_time(anim: &gltf::Animation) -> i32 {
+    if is_death_anim(anim) { 0 } else { 480 }
 }
 
 fn make_rfa(anim: &gltf::Animation, skin: &gltf::Skin, buffers: &[BufferData]) -> rfa::File {
@@ -160,10 +189,10 @@ fn make_rfa(anim: &gltf::Animation, skin: &gltf::Skin, buffers: &[BufferData]) -
         bones.push(convert_bone_anim(&joint, anim, buffers));
     }
     let (start_time, end_time) = determine_anim_time_range(&bones);
-    let is_death_anim = anim.name().unwrap_or_default().contains("death");
     let duration = end_time - start_time;
-    let ramp_in_time = 480.min(duration / 2);
-    let ramp_out_time = if is_death_anim { 0 } else { ramp_in_time };
+    let max_ramp_time = duration / 2;
+    let ramp_in_time = determine_ramp_in_time(anim).min(max_ramp_time);
+    let ramp_out_time = determine_ramp_out_time(anim).min(max_ramp_time);
     let header = rfa::FileHeader {
         num_bones: bones.len() as i32,
         start_time,
@@ -249,8 +278,8 @@ fn is_joint(node: &gltf::Node, skin: &gltf::Skin) -> bool {
 pub(crate) fn get_nodes_parented_to_bones<'a>(skin: &'a gltf::Skin) -> impl Iterator<Item = (gltf::Node<'a>, i32)> {
     skin.joints()
         .flat_map(move |joint| {
-            let joint_index = get_joint_index(&joint, &skin) as i32;
+            let joint_index = get_joint_index(&joint, skin) as i32;
             joint.children().map(move |n| (n, joint_index))
         })
-        .filter(move |(node, _)| !is_joint(node, &skin))
+        .filter(move |(node, _)| !is_joint(node, skin))
 }
