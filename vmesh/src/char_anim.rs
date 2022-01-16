@@ -143,17 +143,21 @@ fn check_for_scale_channels(n: &gltf::Node, anim: &gltf::Animation, buffers: &[B
     }
 }
 
+fn convert_bone_anim(node: &gltf::Node, anim: &gltf::Animation, buffers: &[BufferData]) -> rfa::Bone {
+    let rotation_keys = convert_rotation_keys(node, anim, buffers);
+    let translation_keys = convert_translation_keys(node, anim, buffers);
+    check_for_scale_channels(node, anim, buffers);
+    rfa::Bone {
+        weight: 1.0_f32,
+        rotation_keys,
+        translation_keys,
+    }
+}
+
 fn make_rfa(anim: &gltf::Animation, skin: &gltf::Skin, buffers: &[BufferData]) -> rfa::File {
     let mut bones = Vec::with_capacity(skin.joints().count());
-    for n in skin.joints() {
-        let rotation_keys = convert_rotation_keys(&n, anim, buffers);
-        let translation_keys = convert_translation_keys(&n, anim, buffers);
-        check_for_scale_channels(&n, anim, buffers);
-        bones.push(rfa::Bone {
-            weight: 1.0_f32,
-            rotation_keys,
-            translation_keys,
-        });
+    for joint in skin.joints() {
+        bones.push(convert_bone_anim(&joint, anim, buffers));
     }
     let (start_time, end_time) = determine_anim_time_range(&bones);
     let is_death_anim = anim.name().unwrap_or_default().contains("death");
@@ -167,7 +171,7 @@ fn make_rfa(anim: &gltf::Animation, skin: &gltf::Skin, buffers: &[BufferData]) -
         ramp_in_time,
         ramp_out_time,
         total_rotation: [0.0_f32, 0.0_f32, 0.0_f32, 1.0_f32],
-        total_translation: [0.0_f32, 0.0_f32, 0.0_f32],
+        total_translation: [0.0_f32; 3],
         ..rfa::FileHeader::default()
     };
     rfa::File {
