@@ -102,7 +102,7 @@ fn compute_mesh_bbox(mesh: &gltf::Mesh, buffers: &[BufferData], transform: &Matr
         let reader = prim.reader(|buffer| Some(&buffers[buffer.index()]));
         if let Some(iter) = reader.read_positions() {
             for pos in iter {
-                let tpos = transform_point(&pos, transform);
+                let tpos = gltf_to_rf_vec(transform_point(&pos, transform));
                 #[allow(clippy::needless_range_loop)]
                 for i in 0..3 {
                     aabb.min[i] = aabb.min[i].min(tpos[i]);
@@ -450,10 +450,7 @@ fn convert_lod_mesh(node: &gltf::Node, buffers: &[BufferData], is_character: boo
     let (origin, rot_scale_mat) = extract_translation_from_matrix(&node_transform);
 
     let bbox = compute_mesh_bbox(&mesh, buffers, &rot_scale_mat);
-    let (bbox_min, bbox_max) = (
-        gltf_to_rf_vec(bbox.min),
-        gltf_to_rf_vec(bbox.max),
-    );
+    let (bbox_min, bbox_max) = (bbox.min, bbox.max);
 
     let offset = gltf_to_rf_vec(origin);
     let radius = compute_mesh_bounding_sphere_radius(&mesh, buffers, &rot_scale_mat);
