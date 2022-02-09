@@ -13,6 +13,6 @@ serde_derive = "1"
 glam = "0.20.2"
 
 [dependencies.gltf]
-version = "0.16"
+version = "1"
 features = ["extras", "names", "utils", "KHR_materials_pbrSpecularGlossiness"]
 default-features = false
