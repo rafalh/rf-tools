@@ -197,7 +197,7 @@ fn create_mesh_chunk_data(prim: &gltf::Primitive, buffers: &[BufferData],
         Vec::new()
     } else {
         faces.iter()
-            .map(|face| face.vindices.map(|i| usize::from(i)))
+            .map(|face| face.vindices.map(usize::from))
             .map(|[i, j, k]| compute_triangle_plane(&vecs[i], &vecs[j], &vecs[k]))
             .collect()
     };
