@@ -249,7 +249,6 @@ fn make_rfa(anim: &gltf::Animation, skin: &gltf::Skin, buffers: &[BufferData]) -
     let duration = end_time - start_time;
     let root_joint_extras = get_root_joint_extras(skin);
     let ramp_in_time = determine_ramp_in_time(anim, &root_joint_extras, duration);
-    println!("ramp_in_time {}", ramp_in_time);
     let ramp_out_time = determine_ramp_out_time(anim, &root_joint_extras, duration);
     let header = rfa::FileHeader {
         num_bones: bones.len() as i32,
