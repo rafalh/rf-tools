@@ -381,7 +381,7 @@ impl MeshFace {
     }
 }
 
-#[derive(Default)]
+#[derive(Clone, Copy, Debug, Default)]
 pub struct WeightIndexArray {
     pub weights: [u8; 4],
     pub indices: [u8; 4],
