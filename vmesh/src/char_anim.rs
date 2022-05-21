@@ -194,7 +194,7 @@ fn convert_bone_anim(node: &gltf::Node, anim: &gltf::Animation, ctx: &Context) -
     check_for_scale_channels(node, anim, ctx);
     let extras = get_node_extras::<JointExtras>(node);
     let weight = extras.get_anim_weight(anim.name().unwrap_or_default())
-        .or_else(|| ctx.args.anim_weight)
+        .or(ctx.args.anim_weight)
         .unwrap_or_else(|| determine_anim_weight(&rotation_keys, &translation_keys));
     rfa::Bone {
         weight,
@@ -214,7 +214,7 @@ fn get_default_ramp_out_time(anim: &gltf::Animation) -> i32 {
 fn determine_ramp_in_time(anim: &gltf::Animation, root_joint_extras: &JointExtras, duration: i32, ctx: &Context) -> i32 {
     let anim_name = anim.name().unwrap_or_default();
     root_joint_extras.get_ramp_in_time(anim_name)
-        .or_else(|| ctx.args.ramp_in_time)
+        .or(ctx.args.ramp_in_time)
         .map(gltf_time_to_rfa_time)
         .unwrap_or_else(|| get_default_ramp_in_time(anim).min(duration / 2))
 }
@@ -222,7 +222,7 @@ fn determine_ramp_in_time(anim: &gltf::Animation, root_joint_extras: &JointExtra
 fn determine_ramp_out_time(anim: &gltf::Animation, root_joint_extras: &JointExtras, duration: i32, ctx: &Context) -> i32 {
     let anim_name = anim.name().unwrap_or_default();
     root_joint_extras.get_ramp_out_time(anim_name)
-        .or_else(|| ctx.args.ramp_out_time)
+        .or(ctx.args.ramp_out_time)
         .map(gltf_time_to_rfa_time)
         .unwrap_or_else(|| get_default_ramp_out_time(anim).min(duration / 2))
 }

@@ -524,18 +524,16 @@ impl Context {
     }
 }
 
-fn generate_output_file_name(input_file_name: &str, output_file_name_opt: Option<&str>, is_character: bool) -> String {
+fn generate_output_file_name(input_file_name: &Path, output_file_name_opt: Option<&Path>, is_character: bool) -> PathBuf {
     output_file_name_opt
         .map_or_else(|| {
-            let base_file_name = input_file_name.strip_suffix(".gltf")
-                .unwrap_or_else(|| input_file_name.strip_suffix(".glb").unwrap_or(input_file_name));
-            let ext = if is_character { "v3c" } else { "v3m" };
-            format!("{}.{}", base_file_name, ext)
-        }, &str::to_owned)
+            let output_ext = if is_character { "v3c" } else { "v3m" };
+            input_file_name.with_extension(output_ext)
+        }, &Path::to_owned)
 }
 
 fn convert_gltf_to_v3mc(args: Args) -> Result<(), Box<dyn Error>> {
-    println!("Importing GLTF file: {}", args.input_file);
+    println!("Importing GLTF file: {}", args.input_file.display());
     let input_path = Path::new(&args.input_file);
     let gltf = gltf::Gltf::open(input_path)?;
     let gltf::Gltf { document, blob } = gltf;
@@ -545,12 +543,12 @@ fn convert_gltf_to_v3mc(args: Args) -> Result<(), Box<dyn Error>> {
     let skin_opt = document.skins().next();
     let is_character = skin_opt.is_some();
     let output_file_name = generate_output_file_name(&args.input_file, args.output_file.as_deref(), is_character);
-    let output_dir = Path::new(&output_file_name).parent().unwrap().to_owned();
+    let output_dir = output_file_name.parent().unwrap().to_owned();
 
-    println!("Exporting mesh: {}", output_file_name);
+    println!("Exporting mesh: {}", output_file_name.display());
     let ctx = Context { buffers, is_character, args, output_dir };
     let v3m = make_v3mc_file(&document, &ctx)?;
-    let file = File::create(&output_file_name)?;
+    let file = File::create(output_file_name)?;
     let mut wrt = BufWriter::new(file);
     v3m.write(&mut wrt)?;
 
@@ -564,17 +562,17 @@ fn convert_gltf_to_v3mc(args: Args) -> Result<(), Box<dyn Error>> {
 }
 
 #[derive(Parser, Debug)]
-#[clap(author, version, about, long_about = None)]
+#[clap(author, version, about, about = "GLTF to V3M/V3C converter")]
 pub struct Args {
     /// Input GLTF filename
-    input_file: String,
+    input_file: PathBuf,
 
     /// Input GLTF file
-    output_file: Option<String>,
+    output_file: Option<PathBuf>,
 
     /// Default animation weight to be used when it is not defined in bone extras.
     /// Default is 10 if bone is animated, 2 otherwise
-    #[clap(short = 'w', long)]
+    #[clap(long)]
     anim_weight: Option<f32>,
 
     /// Default ramp in time in seconds to be used when it is not defined in bone extras.
