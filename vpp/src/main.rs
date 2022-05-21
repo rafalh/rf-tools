@@ -114,7 +114,7 @@ fn process_file_list(file_list: Vec<String>) -> Result<Vec<String>> {
 
 fn transform_filename_for_dep_file(filename: &str) -> Result<String> {
     let abs_path = std::fs::canonicalize(filename)?;
-    Ok(abs_path.display().to_string().replace(" ", "\\ "))
+    Ok(abs_path.display().to_string().replace(' ', "\\ "))
 }
 
 fn create_dep_file(packfile_path: &str, file_list: &[String]) -> Result<()> {
@@ -329,7 +329,7 @@ fn main() -> Result<()> {
     match args.mode {
         Mode::Create => {
             let vpp_path = args.positional_args.first().unwrap();
-            let file_list = process_file_list(args.positional_args.iter().cloned().skip(1).collect::<Vec<_>>())?;
+            let file_list = process_file_list(args.positional_args.iter().skip(1).cloned().collect::<Vec<_>>())?;
             create_vpp(vpp_path, &file_list, args.verbose)?;
             if args.dep_info {
                 create_dep_file(vpp_path, &file_list)?;
