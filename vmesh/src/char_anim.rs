@@ -194,6 +194,7 @@ fn convert_bone_anim(node: &gltf::Node, anim: &gltf::Animation, ctx: &Context) -
     check_for_scale_channels(node, anim, ctx);
     let extras = get_node_extras::<JointExtras>(node);
     let weight = extras.get_anim_weight(anim.name().unwrap_or_default())
+        .or_else(|| ctx.args.anim_weight)
         .unwrap_or_else(|| determine_anim_weight(&rotation_keys, &translation_keys));
     rfa::Bone {
         weight,

@@ -514,7 +514,6 @@ fn make_v3mc_file(doc: &gltf::Document, ctx: &Context) -> Result<v3mc::File, Box
 struct Context {
     buffers: Vec<BufferData>,
     is_character: bool,
-    #[allow(unused)]
     args: Args,
     output_dir: PathBuf,
 }
@@ -572,6 +571,11 @@ pub struct Args {
 
     /// Input GLTF file
     output_file: Option<String>,
+
+    /// Default animation weight to be used when it is not defined in bone extras.
+    /// Default is 10 if bone is animated, 2 otherwise
+    #[clap(short = 'w', long)]
+    anim_weight: Option<f32>,
 }
 
 fn main() {
