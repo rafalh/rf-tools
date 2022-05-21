@@ -251,6 +251,12 @@ fn make_rfa(anim: &gltf::Animation, skin: &gltf::Skin, ctx: &Context) -> rfa::Fi
     let root_joint_extras = get_root_joint_extras(skin);
     let ramp_in_time = determine_ramp_in_time(anim, &root_joint_extras, duration, ctx);
     let ramp_out_time = determine_ramp_out_time(anim, &root_joint_extras, duration, ctx);
+    if ctx.args.verbose >= 2 {
+        println!("Start time: {}", start_time);
+        println!("End time: {}", end_time);
+        println!("Ramp In time: {}", ramp_in_time);
+        println!("Ramp Out time: {}", ramp_out_time);
+    }
     let header = rfa::FileHeader {
         num_bones: bones.len() as i32,
         start_time,
@@ -270,7 +276,9 @@ fn make_rfa(anim: &gltf::Animation, skin: &gltf::Skin, ctx: &Context) -> rfa::Fi
 pub(crate) fn convert_animation_to_rfa(anim: &gltf::Animation, index: usize, skin: &gltf::Skin, ctx: &Context) -> std::io::Result<()> {
     let name = anim.name().map_or_else(|| format!("anim_{}", index), &str::to_owned);
     let file_name = ctx.output_dir.join(format!("{}.rfa", name));
-    println!("Exporting animation: {} -> {}", name, file_name.display());
+    if ctx.args.verbose >= 1 {
+        println!("Exporting animation: {} -> {}", name, file_name.display());
+    }
     let mut wrt = BufWriter::new(File::create(&file_name)?);
     let rfa = make_rfa(anim, skin, ctx);
     rfa.write(&mut wrt)?;
@@ -304,6 +312,9 @@ fn convert_bone(n: &gltf::Node, inverse_bind_matrix: &[[f32; 4]; 4], index: usiz
 
 pub(crate) fn convert_bones(skin: &gltf::Skin, ctx: &Context) -> std::io::Result<Vec<v3mc::Bone>> {
     let num_joints = skin.joints().count();
+    if ctx.args.verbose >= 2 {
+        println!("Bones (joints): {}/{}", num_joints, v3mc::MAX_BONES);
+    }
     if num_joints > v3mc::MAX_BONES {
         let err_msg = format!("too many bones: found {} but only {} are supported", num_joints, v3mc::MAX_BONES);
         return Err(new_custom_error(err_msg));
@@ -325,7 +336,6 @@ pub(crate) fn convert_bones(skin: &gltf::Skin, ctx: &Context) -> std::io::Result
         let bone = convert_bone(&n, &inverse_bind_matrices[i], i, skin);
         bones.push(bone);
     }
-    println!("Found {} bones", bones.len());
     Ok(bones)
 }
 

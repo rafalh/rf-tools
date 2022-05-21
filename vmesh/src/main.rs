@@ -244,7 +244,7 @@ fn create_mesh_data_block(
     }
 }
 
-fn create_mesh_chunk(prim: &gltf::Primitive, index: usize) -> std::io::Result<v3mc::MeshChunk> {
+fn create_mesh_chunk(prim: &gltf::Primitive, index: usize, ctx: &Context) -> std::io::Result<v3mc::MeshChunk> {
     
     if prim.mode() != gltf::mesh::Mode::Triangles {
         return Err(new_custom_error("only triangle list primitives are supported"));
@@ -261,7 +261,9 @@ fn create_mesh_chunk(prim: &gltf::Primitive, index: usize) -> std::io::Result<v3
     assert!(index_count % 3 == 0, "number of indices is not a multiple of three: {}", index_count);
     let tri_count = index_count / 3;
 
-    println!("Primitive #{}: vertices {}/{}, indices {}/{}", index, vertex_count, vertex_limit, index_count, index_limit);
+    if ctx.args.verbose >= 2 {
+        println!("Primitive #{}: vertices {}/{}, indices {}/{}", index, vertex_count, vertex_limit, index_count, index_limit);
+    }
 
     if env::var("IGNORE_GEOMETRY_LIMITS").is_err() {
         if vertex_count > vertex_limit {
@@ -312,7 +314,7 @@ fn convert_mesh(
 
     let mut chunks = Vec::new();
     for (i, prim) in mesh.primitives().enumerate() {
-        chunks.push(create_mesh_chunk(&prim, i)?);
+        chunks.push(create_mesh_chunk(&prim, i, ctx)?);
     }
 
     let mut data_block_cur = Cursor::new(Vec::<u8>::new());
@@ -383,7 +385,7 @@ fn convert_prop_point(node: &gltf::Node, transform: &glam::Mat4, parent_index: i
     }
 }
 
-fn get_prop_points(parent: &gltf::Node, transform: &glam::Mat4) -> Vec<v3mc::PropPoint> {
+fn get_prop_points(parent: &gltf::Node, transform: &glam::Mat4, ctx: &Context) -> Vec<v3mc::PropPoint> {
     let mut prop_points = parent.children()
         .filter(|n| n.mesh().is_none())
         .map(|n| convert_prop_point(&n, transform, -1))
@@ -397,7 +399,9 @@ fn get_prop_points(parent: &gltf::Node, transform: &glam::Mat4) -> Vec<v3mc::Pro
             )
         );
     }
-    println!("Found {} prop points", prop_points.len());
+    if ctx.args.verbose >= 2 {
+        println!("Found {} prop points", prop_points.len());
+    }
     prop_points
 }
 
@@ -405,26 +409,28 @@ fn is_csphere(node: &gltf::Node) -> bool {
     node.mesh().is_none() && node.name().unwrap_or_default().starts_with("csphere_")
 }
 
-fn get_cspheres(doc: &gltf::Document) -> Vec<v3mc::ColSphere> {
+fn convert_cspheres(doc: &gltf::Document, ctx: &Context) -> Vec<v3mc::ColSphere> {
     let mut cspheres = doc.nodes()
         .filter(is_csphere)
-        .map(|n| convert_csphere(&n, -1))
+        .map(|n| convert_csphere(&n, -1, ctx))
         .collect::<Vec<_>>();
     if let Some(skin) = doc.skins().next() {
         cspheres.extend(char_anim::get_nodes_parented_to_bones(&skin)
             .filter(|(node, _)| is_csphere(node))
             .filter(|(node, _)| node.name().is_some())
             .map(|(node, parent_index)|
-                convert_csphere(&node, parent_index)
+                convert_csphere(&node, parent_index, ctx)
             )
         );
     }
-    println!("Found {} cspheres", cspheres.len());
     cspheres
 }
 
-fn convert_csphere(node: &gltf::Node, parent_index: i32) -> v3mc::ColSphere {
+fn convert_csphere(node: &gltf::Node, parent_index: i32, ctx: &Context) -> v3mc::ColSphere {
     let name = node.name().expect("csphere name is missing").to_owned();
+    if ctx.args.verbose >= 2 {
+        println!("Processing csphere: node #{} '{}'", node.index(), name);
+    }
     let transform = get_node_local_transform(node);
     let (scale, _rotation, translation) = transform.to_scale_rotation_translation();
     let radius = scale.max_element();
@@ -436,12 +442,26 @@ fn convert_csphere(node: &gltf::Node, parent_index: i32) -> v3mc::ColSphere {
     }
 }
 
+fn convert_lod_meshes(doc: &gltf::Document, ctx: &Context) -> Result<Vec<v3mc::LodMesh>, Box<dyn Error>> {
+    let submesh_nodes = get_submesh_nodes(doc);
+    let mut lod_meshes = Vec::with_capacity(submesh_nodes.len());
+    if lod_meshes.is_empty() {
+        eprintln!("Warning! Found no LOD groups");
+    }
+    for n in &submesh_nodes {
+        lod_meshes.push(convert_lod_mesh(n, ctx)?);
+    }
+    Ok(lod_meshes)
+}
+
 fn convert_lod_mesh(node: &gltf::Node, ctx: &Context) -> Result<v3mc::LodMesh, Box<dyn Error>> {
     let node_transform = glam::Mat4::from_cols_array_2d(&node.transform().matrix()).to_cols_array_2d();
 
     let mesh = node.mesh().unwrap();
     let name = node.name().unwrap_or("Default").to_string();
-    println!("Processing LOD group: node #{} '{}'", node.index(), name);
+    if ctx.args.verbose >= 2 {
+        println!("Processing LOD group: node #{} '{}'", node.index(), name);
+    }
 
     let parent_name = "None".to_string();
     let version = v3mc::MeshDataBlock::VERSION;
@@ -456,7 +476,7 @@ fn convert_lod_mesh(node: &gltf::Node, ctx: &Context) -> Result<v3mc::LodMesh, B
     let radius = compute_mesh_bounding_sphere_radius(&mesh, &rot_scale_mat, ctx);
 
     let transform = glam::Mat4::from_mat3(glam::Mat3::from_cols_array_2d(&rot_scale_mat));
-    let prop_points = get_prop_points(node, &transform);
+    let prop_points = get_prop_points(node, &transform, ctx);
 
     let mut gltf_materials: Vec<_> = child_node_dist_vec.iter()
         .flat_map(|(n, _)| get_mesh_materials(&n.mesh().unwrap()))
@@ -466,7 +486,9 @@ fn convert_lod_mesh(node: &gltf::Node, ctx: &Context) -> Result<v3mc::LodMesh, B
 
     let mut meshes: Vec<_> = Vec::with_capacity(child_node_dist_vec.len());
     for (i, (n, d)) in child_node_dist_vec.iter().enumerate() {
-        println!("Processing LOD{} mesh: node #{} '{}', distance {}", i, n.index(), n.name().unwrap_or("<unnamed>"), d);
+        if ctx.args.verbose >= 2 {
+            println!("Processing LOD{} mesh: node #{} '{}', distance {}", i, n.index(), n.name().unwrap_or("<unnamed>"), d);
+        }
         meshes.push(convert_mesh(n, &gltf_materials, &prop_points, &rot_scale_mat, ctx)?);
     }
 
@@ -489,14 +511,8 @@ fn make_v3mc_file(doc: &gltf::Document, ctx: &Context) -> Result<v3mc::File, Box
         eprintln!("Warning! There is more than one skin defined. Only first skin will be used.");
     }
 
-    let submesh_nodes = get_submesh_nodes(doc);
-    let mut lod_meshes = Vec::with_capacity(submesh_nodes.len());
-    for n in &submesh_nodes {
-        lod_meshes.push(convert_lod_mesh(n, ctx)?);
-    }
-
-    let cspheres = get_cspheres(doc);
-
+    let lod_meshes = convert_lod_meshes(doc, ctx)?;
+    let cspheres = convert_cspheres(doc, ctx);
     let bones = if let Some(skin) = doc.skins().next() {
         char_anim::convert_bones(&skin, ctx)?
     } else {
@@ -533,19 +549,25 @@ fn generate_output_file_name(input_file_name: &Path, output_file_name_opt: Optio
 }
 
 fn convert_gltf_to_v3mc(args: Args) -> Result<(), Box<dyn Error>> {
-    println!("Importing GLTF file: {}", args.input_file.display());
+    if args.verbose >= 1 {
+        println!("Importing GLTF file: {}", args.input_file.display());
+    }
     let input_path = Path::new(&args.input_file);
     let gltf = gltf::Gltf::open(input_path)?;
     let gltf::Gltf { document, blob } = gltf;
 
-    println!("Importing GLTF buffers");
+    if args.verbose >= 2 {
+        println!("Importing GLTF buffers");
+    }
     let buffers = import::import_buffer_data(&document, input_path.parent(), blob)?;
     let skin_opt = document.skins().next();
     let is_character = skin_opt.is_some();
     let output_file_name = generate_output_file_name(&args.input_file, args.output_file.as_deref(), is_character);
     let output_dir = output_file_name.parent().unwrap().to_owned();
 
-    println!("Exporting mesh: {}", output_file_name.display());
+    if args.verbose >= 1 {
+        println!("Exporting mesh: {}", output_file_name.display());
+    }
     let ctx = Context { buffers, is_character, args, output_dir };
     let v3m = make_v3mc_file(&document, &ctx)?;
     let file = File::create(output_file_name)?;
@@ -584,12 +606,18 @@ pub struct Args {
     /// Default is 0 for death animation, 0.1 fot other animations
     #[clap(long)]
     ramp_out_time: Option<f32>,
+
+    /// Enable verbose output
+    #[clap(short, long, parse(from_occurrences))]
+    verbose: usize,
 }
 
 fn main() {
     let args = Args::parse();
 
-    println!("GLTF to V3M/V3C converter {} by Rafalh", env!("CARGO_PKG_VERSION"));
+    if args.verbose >= 1 {
+        println!("vmesh {}", env!("CARGO_PKG_VERSION"));
+    }
 
     if let Err(e) = convert_gltf_to_v3mc(args) {
         eprintln!("Error: {}", e);
