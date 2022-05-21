@@ -204,23 +204,25 @@ fn convert_bone_anim(node: &gltf::Node, anim: &gltf::Animation, ctx: &Context) -
 }
 
 fn get_default_ramp_in_time(anim: &gltf::Animation) -> i32 {
-    if is_death_anim(anim) { 800 } else { 480 }
+    if is_death_anim(anim) { 800 } else { 480 } // 0.1(6) s, 0.1 s
 }
 
 fn get_default_ramp_out_time(anim: &gltf::Animation) -> i32 {
-    if is_death_anim(anim) { 0 } else { 480 }
+    if is_death_anim(anim) { 0 } else { 480 } // 0.0 s, 0.1 s
 }
 
-fn determine_ramp_in_time(anim: &gltf::Animation, root_joint_extras: &JointExtras, duration: i32) -> i32 {
+fn determine_ramp_in_time(anim: &gltf::Animation, root_joint_extras: &JointExtras, duration: i32, ctx: &Context) -> i32 {
     let anim_name = anim.name().unwrap_or_default();
     root_joint_extras.get_ramp_in_time(anim_name)
+        .or_else(|| ctx.args.ramp_in_time)
         .map(gltf_time_to_rfa_time)
         .unwrap_or_else(|| get_default_ramp_in_time(anim).min(duration / 2))
 }
 
-fn determine_ramp_out_time(anim: &gltf::Animation, root_joint_extras: &JointExtras, duration: i32) -> i32 {
+fn determine_ramp_out_time(anim: &gltf::Animation, root_joint_extras: &JointExtras, duration: i32, ctx: &Context) -> i32 {
     let anim_name = anim.name().unwrap_or_default();
     root_joint_extras.get_ramp_out_time(anim_name)
+        .or_else(|| ctx.args.ramp_out_time)
         .map(gltf_time_to_rfa_time)
         .unwrap_or_else(|| get_default_ramp_out_time(anim).min(duration / 2))
 }
@@ -247,8 +249,8 @@ fn make_rfa(anim: &gltf::Animation, skin: &gltf::Skin, ctx: &Context) -> rfa::Fi
     let (start_time, end_time) = determine_anim_time_range(&bones);
     let duration = end_time - start_time;
     let root_joint_extras = get_root_joint_extras(skin);
-    let ramp_in_time = determine_ramp_in_time(anim, &root_joint_extras, duration);
-    let ramp_out_time = determine_ramp_out_time(anim, &root_joint_extras, duration);
+    let ramp_in_time = determine_ramp_in_time(anim, &root_joint_extras, duration, ctx);
+    let ramp_out_time = determine_ramp_out_time(anim, &root_joint_extras, duration, ctx);
     let header = rfa::FileHeader {
         num_bones: bones.len() as i32,
         start_time,

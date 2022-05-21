@@ -576,6 +576,16 @@ pub struct Args {
     /// Default is 10 if bone is animated, 2 otherwise
     #[clap(short = 'w', long)]
     anim_weight: Option<f32>,
+
+    /// Default ramp in time in seconds to be used when it is not defined in bone extras.
+    /// Default is 0.1(6) for death animation, 0.1 fot other animations
+    #[clap(long)]
+    ramp_in_time: Option<f32>,
+
+    /// Default ramp in time in seconds to be used when it is not defined in bone extras.
+    /// Default is 0 for death animation, 0.1 fot other animations
+    #[clap(long)]
+    ramp_out_time: Option<f32>,
 }
 
 fn main() {
