@@ -10,6 +10,7 @@ use std::io::Cursor;
 use std::fs::File;
 use std::io::BufWriter;
 use std::ops::Mul;
+use std::path::PathBuf;
 use std::vec::Vec;
 use std::env;
 use std::convert::TryInto;
@@ -17,6 +18,7 @@ use std::f32;
 use std::iter;
 use std::error::Error;
 use std::path::Path;
+use gltf::Buffer;
 use serde_derive::Deserialize;
 use clap::Parser;
 use import::BufferData;
@@ -85,7 +87,7 @@ fn count_mesh_vertices(mesh: &gltf::Mesh) -> usize {
         .sum()
 }
 
-fn compute_mesh_bbox(mesh: &gltf::Mesh, buffers: &[BufferData], transform: &Matrix3) -> gltf::mesh::BoundingBox {
+fn compute_mesh_bbox(mesh: &gltf::Mesh, transform: &Matrix3, ctx: &Context) -> gltf::mesh::BoundingBox {
     // Note: primitive AABB from gltf cannot be used because vertices are being transformed
     if count_mesh_vertices(mesh) == 0 {
         // Mesh has no vertices so return empty AABB
@@ -100,7 +102,7 @@ fn compute_mesh_bbox(mesh: &gltf::Mesh, buffers: &[BufferData], transform: &Matr
     };
     // Calculate AABB manually using vertex position data
     for prim in mesh.primitives() {
-        let reader = prim.reader(|buffer| Some(&buffers[buffer.index()]));
+        let reader = prim.reader(|buffer| ctx.get_buffer_data(buffer));
         if let Some(iter) = reader.read_positions() {
             for pos in iter {
                 let tpos = gltf_to_rf_vec(transform_point(&pos, transform));
@@ -115,10 +117,10 @@ fn compute_mesh_bbox(mesh: &gltf::Mesh, buffers: &[BufferData], transform: &Matr
     aabb
 }
 
-fn compute_mesh_bounding_sphere_radius(mesh: &gltf::Mesh, buffers: &[BufferData], transform: &Matrix3) -> f32 {
+fn compute_mesh_bounding_sphere_radius(mesh: &gltf::Mesh, transform: &Matrix3, ctx: &Context) -> f32 {
     let mut radius = 0_f32;
     for prim in mesh.primitives() {
-        let reader = prim.reader(|buffer| Some(&buffers[buffer.index()]));
+        let reader = prim.reader(|buffer| ctx.get_buffer_data(buffer));
         if let Some(iter) = reader.read_positions() {
             for pos in iter {
                 let tpos = transform_point(&pos, transform);
@@ -155,10 +157,9 @@ fn create_mesh_chunk_info(prim: &gltf::Primitive, materials: &[gltf::Material]) 
     }
 }
 
-fn create_mesh_chunk_data(prim: &gltf::Primitive, buffers: &[BufferData],
-    transform: &Matrix3, is_character: bool) -> v3mc::MeshChunkData {
+fn create_mesh_chunk_data(prim: &gltf::Primitive, transform: &Matrix3, ctx: &Context) -> v3mc::MeshChunkData {
     
-    let reader = prim.reader(|buffer| Some(&buffers[buffer.index()]));
+    let reader = prim.reader(|buffer| ctx.get_buffer_data(buffer));
 
     let vecs: Vec<_> = reader.read_positions()
         .expect("mesh has no positions")
@@ -194,7 +195,7 @@ fn create_mesh_chunk_data(prim: &gltf::Primitive, buffers: &[BufferData],
         })
         .collect();
 
-    let face_planes: Vec::<_> = if is_character {
+    let face_planes: Vec::<_> = if ctx.is_character {
         Vec::new()
     } else {
         faces.iter()
@@ -230,16 +231,15 @@ fn create_mesh_chunk_data(prim: &gltf::Primitive, buffers: &[BufferData],
 }
 
 fn create_mesh_data_block(
-    mesh: &gltf::Mesh, 
-    buffers: &[BufferData], 
+    mesh: &gltf::Mesh,
     transform: &Matrix3, 
-    mesh_materials: &[gltf::Material], 
+    mesh_materials: &[gltf::Material],
     prop_points: &[v3mc::PropPoint],
-    is_character: bool
+    ctx: &Context
 ) -> v3mc::MeshDataBlock {
     v3mc::MeshDataBlock{
         chunks: mesh.primitives().map(|prim| create_mesh_chunk_info(&prim, mesh_materials)).collect(),
-        chunks_data: mesh.primitives().map(|prim| create_mesh_chunk_data(&prim, buffers, transform, is_character)).collect(),
+        chunks_data: mesh.primitives().map(|prim| create_mesh_chunk_data(&prim, transform, ctx)).collect(),
         prop_points: prop_points.to_vec(),
     }
 }
@@ -293,16 +293,15 @@ fn create_mesh_chunk(prim: &gltf::Primitive, index: usize) -> std::io::Result<v3
 }
 
 fn convert_mesh(
-    node: &gltf::Node, 
-    buffers: &[BufferData], 
+    node: &gltf::Node,
     lod_mesh_materials: &[gltf::Material],
     prop_points: &[v3mc::PropPoint],
     transform: &Matrix3,
-    is_character: bool
+    ctx: &Context
 ) -> std::io::Result<v3mc::Mesh> {
 
     let mesh = node.mesh().unwrap();
-    let flags = if is_character { v3mc::VIF_MESH_FLAG_CHARACTER } else { v3mc::VIF_MESH_FLAG_FACE_PLANES };
+    let flags = if ctx.is_character { v3mc::VIF_MESH_FLAG_CHARACTER } else { v3mc::VIF_MESH_FLAG_FACE_PLANES };
     let num_vecs = count_mesh_vertices(&mesh) as i32;
 
     let materials: Vec<_> = get_mesh_materials(&mesh);
@@ -317,7 +316,7 @@ fn convert_mesh(
     }
 
     let mut data_block_cur = Cursor::new(Vec::<u8>::new());
-    create_mesh_data_block(&mesh, buffers, transform, &materials, prop_points, is_character)
+    create_mesh_data_block(&mesh, transform, &materials, prop_points, ctx)
         .write(&mut data_block_cur)?;
     let data_block: Vec::<u8> = data_block_cur.into_inner();
     
@@ -437,7 +436,7 @@ fn convert_csphere(node: &gltf::Node, parent_index: i32) -> v3mc::ColSphere {
     }
 }
 
-fn convert_lod_mesh(node: &gltf::Node, buffers: &[BufferData], is_character: bool) -> Result<v3mc::LodMesh, Box<dyn Error>> {
+fn convert_lod_mesh(node: &gltf::Node, ctx: &Context) -> Result<v3mc::LodMesh, Box<dyn Error>> {
     let node_transform = glam::Mat4::from_cols_array_2d(&node.transform().matrix()).to_cols_array_2d();
 
     let mesh = node.mesh().unwrap();
@@ -450,11 +449,11 @@ fn convert_lod_mesh(node: &gltf::Node, buffers: &[BufferData], is_character: boo
     let distances = child_node_dist_vec.iter().map(|(_, dist)| *dist).collect();
     let (origin, rot_scale_mat) = extract_translation_from_matrix(&node_transform);
 
-    let bbox = compute_mesh_bbox(&mesh, buffers, &rot_scale_mat);
+    let bbox = compute_mesh_bbox(&mesh, &rot_scale_mat, ctx);
     let (bbox_min, bbox_max) = (bbox.min, bbox.max);
 
     let offset = gltf_to_rf_vec(origin);
-    let radius = compute_mesh_bounding_sphere_radius(&mesh, buffers, &rot_scale_mat);
+    let radius = compute_mesh_bounding_sphere_radius(&mesh, &rot_scale_mat, ctx);
 
     let transform = glam::Mat4::from_mat3(glam::Mat3::from_cols_array_2d(&rot_scale_mat));
     let prop_points = get_prop_points(node, &transform);
@@ -468,7 +467,7 @@ fn convert_lod_mesh(node: &gltf::Node, buffers: &[BufferData], is_character: boo
     let mut meshes: Vec<_> = Vec::with_capacity(child_node_dist_vec.len());
     for (i, (n, d)) in child_node_dist_vec.iter().enumerate() {
         println!("Processing LOD{} mesh: node #{} '{}', distance {}", i, n.index(), n.name().unwrap_or("<unnamed>"), d);
-        meshes.push(convert_mesh(n, buffers, &gltf_materials, &prop_points, &rot_scale_mat, is_character)?);
+        meshes.push(convert_mesh(n, &gltf_materials, &prop_points, &rot_scale_mat, ctx)?);
     }
 
     Ok(v3mc::LodMesh{
@@ -485,7 +484,7 @@ fn convert_lod_mesh(node: &gltf::Node, buffers: &[BufferData], is_character: boo
     })
 }
 
-fn make_v3mc_file(doc: &gltf::Document, buffers: &[BufferData], is_character: bool) -> Result<v3mc::File, Box<dyn Error>> {
+fn make_v3mc_file(doc: &gltf::Document, ctx: &Context) -> Result<v3mc::File, Box<dyn Error>> {
     if doc.skins().count() > 1 {
         eprintln!("Warning! There is more than one skin defined. Only first skin will be used.");
     }
@@ -493,57 +492,72 @@ fn make_v3mc_file(doc: &gltf::Document, buffers: &[BufferData], is_character: bo
     let submesh_nodes = get_submesh_nodes(doc);
     let mut lod_meshes = Vec::with_capacity(submesh_nodes.len());
     for n in &submesh_nodes {
-        lod_meshes.push(convert_lod_mesh(n, buffers, is_character)?);
+        lod_meshes.push(convert_lod_mesh(n, ctx)?);
     }
 
     let cspheres = get_cspheres(doc);
 
     let bones = if let Some(skin) = doc.skins().next() {
-        char_anim::convert_bones(&skin, buffers)?
+        char_anim::convert_bones(&skin, ctx)?
     } else {
         Vec::new()
     };
 
     Ok(v3mc::File{
-        header: create_v3mc_file_header(&lod_meshes, &cspheres, is_character),
+        header: create_v3mc_file_header(&lod_meshes, &cspheres, ctx.is_character),
         lod_meshes,
         cspheres,
         bones,
     })
 }
 
+struct Context {
+    buffers: Vec<BufferData>,
+    is_character: bool,
+    #[allow(unused)]
+    args: Args,
+    output_dir: PathBuf,
+}
+
+impl Context {
+    fn get_buffer_data(&self, buffer: Buffer) -> Option<&[u8]> {
+        Some(&*self.buffers[buffer.index()])
+    }
+}
+
 fn generate_output_file_name(input_file_name: &str, output_file_name_opt: Option<&str>, is_character: bool) -> String {
     output_file_name_opt
         .map_or_else(|| {
             let base_file_name = input_file_name.strip_suffix(".gltf")
-            .unwrap_or_else(|| input_file_name.strip_suffix(".glb").unwrap_or(input_file_name));
+                .unwrap_or_else(|| input_file_name.strip_suffix(".glb").unwrap_or(input_file_name));
             let ext = if is_character { "v3c" } else { "v3m" };
             format!("{}.{}", base_file_name, ext)
         }, &str::to_owned)
 }
 
-fn convert_gltf_to_v3mc(input_file_name: &str, output_file_name_opt: Option<&str>) -> Result<(), Box<dyn Error>> {
-    println!("Importing GLTF file: {}", input_file_name);
-    let input_path = Path::new(input_file_name);
+fn convert_gltf_to_v3mc(args: Args) -> Result<(), Box<dyn Error>> {
+    println!("Importing GLTF file: {}", args.input_file);
+    let input_path = Path::new(&args.input_file);
     let gltf = gltf::Gltf::open(input_path)?;
     let gltf::Gltf { document, blob } = gltf;
 
     println!("Importing GLTF buffers");
     let buffers = import::import_buffer_data(&document, input_path.parent(), blob)?;
-    
     let skin_opt = document.skins().next();
     let is_character = skin_opt.is_some();
-    let output_file_name = generate_output_file_name(input_file_name, output_file_name_opt, is_character);
+    let output_file_name = generate_output_file_name(&args.input_file, args.output_file.as_deref(), is_character);
+    let output_dir = Path::new(&output_file_name).parent().unwrap().to_owned();
+
     println!("Exporting mesh: {}", output_file_name);
-    let v3m = make_v3mc_file(&document, &buffers, is_character)?;
+    let ctx = Context { buffers, is_character, args, output_dir };
+    let v3m = make_v3mc_file(&document, &ctx)?;
     let file = File::create(&output_file_name)?;
     let mut wrt = BufWriter::new(file);
     v3m.write(&mut wrt)?;
 
-    let output_dir = Path::new(&output_file_name).parent().unwrap();
     if let Some(skin) = skin_opt {
         for (i, anim) in document.animations().enumerate() {
-            char_anim::convert_animation_to_rfa(&anim, i, &skin, &buffers, output_dir)?;
+            char_anim::convert_animation_to_rfa(&anim, i, &skin, &ctx)?;
         }
     }
 
@@ -552,7 +566,7 @@ fn convert_gltf_to_v3mc(input_file_name: &str, output_file_name_opt: Option<&str
 
 #[derive(Parser, Debug)]
 #[clap(author, version, about, long_about = None)]
-struct Args {
+pub struct Args {
     /// Input GLTF filename
     input_file: String,
 
@@ -564,10 +578,8 @@ fn main() {
     let args = Args::parse();
 
     println!("GLTF to V3M/V3C converter {} by Rafalh", env!("CARGO_PKG_VERSION"));
-    let input_file_name = args.input_file;
-    let output_file_name = args.output_file;
 
-    if let Err(e) = convert_gltf_to_v3mc(&input_file_name, output_file_name.as_deref()) {
+    if let Err(e) = convert_gltf_to_v3mc(args) {
         eprintln!("Error: {}", e);
         std::process::exit(1);
     }

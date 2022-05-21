@@ -2,14 +2,12 @@ use std::fs::File;
 use std::io::BufWriter;
 use std::vec::Vec;
 use std::f32;
-use std::path::Path;
 use std::collections::BTreeMap;
 use gltf::animation::Interpolation;
 use gltf::animation::util::{ReadInputs, ReadOutputs};
 use serde_json::Value;
 use serde_derive::Deserialize;
-use crate::{rfa, v3mc, gltf_to_rf_quat, gltf_to_rf_vec, get_node_extras};
-use crate::import::BufferData;
+use crate::{rfa, v3mc, gltf_to_rf_quat, gltf_to_rf_vec, get_node_extras, Context};
 use crate::io_utils::new_custom_error;
 
 #[derive(Deserialize, Debug, Default)]
@@ -53,12 +51,12 @@ fn get_node_anim_channels<'a>(n: &gltf::Node, anim: &'a gltf::Animation) -> impl
 }
 
 fn get_node_anim_data<'a>(
-    n: &gltf::Node, anim: &'a gltf::Animation, buffers: &'a [BufferData]
+    n: &gltf::Node, anim: &'a gltf::Animation, ctx: &'a Context
 ) -> impl Iterator<Item = (ReadInputs<'a>, ReadOutputs<'a>, Interpolation)> + 'a
 {
     get_node_anim_channels(n, anim)
         .filter_map(move |channel| {
-            let reader = channel.reader(|buffer| Some(&buffers[buffer.index()]));
+            let reader = channel.reader(|buffer| ctx.get_buffer_data(buffer));
             let interpolation = channel.sampler().interpolation();
             reader.read_inputs()
                 .and_then(|inputs| 
@@ -67,8 +65,8 @@ fn get_node_anim_data<'a>(
         })
 }
 
-fn convert_rotation_keys(n: &gltf::Node, anim: &gltf::Animation, buffers: &[BufferData]) -> Vec<rfa::RotationKey> {
-    get_node_anim_data(n, anim, buffers)
+fn convert_rotation_keys(n: &gltf::Node, anim: &gltf::Animation, ctx: &Context) -> Vec<rfa::RotationKey> {
+    get_node_anim_data(n, anim, ctx)
         .filter_map(|(inputs, outputs, interpolation)| {
             match outputs {
                 ReadOutputs::Rotations(rotations) => Some((inputs, rotations, interpolation)),
@@ -106,8 +104,8 @@ fn convert_rotation_keys(n: &gltf::Node, anim: &gltf::Animation, buffers: &[Buff
         .unwrap_or_default()
 }
 
-fn convert_translation_keys(n: &gltf::Node, anim: &gltf::Animation, buffers: &[BufferData]) -> Vec<rfa::TranslationKey> {
-    get_node_anim_data(n, anim, buffers)
+fn convert_translation_keys(n: &gltf::Node, anim: &gltf::Animation, ctx: &Context) -> Vec<rfa::TranslationKey> {
+    get_node_anim_data(n, anim, ctx)
         .filter_map(|(inputs, outputs, interpolation)| {
             match outputs {
                 ReadOutputs::Translations(translations) => Some((inputs, translations, interpolation)),
@@ -153,9 +151,9 @@ fn determine_anim_time_range(bones: &[rfa::Bone]) -> (i32, i32) {
         .fold((0_i32, 0_i32), |(min, max), time| (min.min(time), max.max(time)))
 }
 
-fn check_for_scale_channels(n: &gltf::Node, anim: &gltf::Animation, buffers: &[BufferData]) {
+fn check_for_scale_channels(n: &gltf::Node, anim: &gltf::Animation, ctx: &Context) {
     for channel in get_node_anim_channels(n, anim) {
-        let reader = channel.reader(|buffer| Some(&buffers[buffer.index()]));
+        let reader = channel.reader(|buffer| ctx.get_buffer_data(buffer));
         if let Some(ReadOutputs::Scales(scales)) = reader.read_outputs() {
             if scales.flatten().any(|s| (s - 1.0_f32).abs() > 0.01_f32) {
                 eprintln!(
@@ -190,10 +188,10 @@ fn determine_anim_weight(rotation_keys: &[rfa::RotationKey], translation_keys: &
     }
 }
 
-fn convert_bone_anim(node: &gltf::Node, anim: &gltf::Animation, buffers: &[BufferData]) -> rfa::Bone {
-    let rotation_keys = convert_rotation_keys(node, anim, buffers);
-    let translation_keys = convert_translation_keys(node, anim, buffers);
-    check_for_scale_channels(node, anim, buffers);
+fn convert_bone_anim(node: &gltf::Node, anim: &gltf::Animation, ctx: &Context) -> rfa::Bone {
+    let rotation_keys = convert_rotation_keys(node, anim, ctx);
+    let translation_keys = convert_translation_keys(node, anim, ctx);
+    check_for_scale_channels(node, anim, ctx);
     let extras = get_node_extras::<JointExtras>(node);
     let weight = extras.get_anim_weight(anim.name().unwrap_or_default())
         .unwrap_or_else(|| determine_anim_weight(&rotation_keys, &translation_keys));
@@ -240,10 +238,10 @@ fn get_root_joint_extras(skin: &gltf::Skin) -> JointExtras {
         .unwrap_or_default()
 }
 
-fn make_rfa(anim: &gltf::Animation, skin: &gltf::Skin, buffers: &[BufferData]) -> rfa::File {
+fn make_rfa(anim: &gltf::Animation, skin: &gltf::Skin, ctx: &Context) -> rfa::File {
     let mut bones = Vec::with_capacity(skin.joints().count());
     for joint in skin.joints() {
-        bones.push(convert_bone_anim(&joint, anim, buffers));
+        bones.push(convert_bone_anim(&joint, anim, ctx));
     }
     let (start_time, end_time) = determine_anim_time_range(&bones);
     let duration = end_time - start_time;
@@ -266,12 +264,12 @@ fn make_rfa(anim: &gltf::Animation, skin: &gltf::Skin, buffers: &[BufferData]) -
     }
 }
 
-pub(crate) fn convert_animation_to_rfa(anim: &gltf::Animation, index: usize, skin: &gltf::Skin, buffers: &[BufferData], output_dir: &Path) -> std::io::Result<()> {
+pub(crate) fn convert_animation_to_rfa(anim: &gltf::Animation, index: usize, skin: &gltf::Skin, ctx: &Context) -> std::io::Result<()> {
     let name = anim.name().map_or_else(|| format!("anim_{}", index), &str::to_owned);
-    let file_name = output_dir.join(format!("{}.rfa", name));
+    let file_name = ctx.output_dir.join(format!("{}.rfa", name));
     println!("Exporting animation: {} -> {}", name, file_name.display());
     let mut wrt = BufWriter::new(File::create(&file_name)?);
-    let rfa = make_rfa(anim, skin, buffers);
+    let rfa = make_rfa(anim, skin, ctx);
     rfa.write(&mut wrt)?;
     Ok(())
 }
@@ -301,14 +299,14 @@ fn convert_bone(n: &gltf::Node, inverse_bind_matrix: &[[f32; 4]; 4], index: usiz
     v3mc::Bone { name, base_rotation, base_translation, parent_index }
 }
 
-pub(crate) fn convert_bones(skin: &gltf::Skin, buffers: &[BufferData]) -> std::io::Result<Vec<v3mc::Bone>> {
+pub(crate) fn convert_bones(skin: &gltf::Skin, ctx: &Context) -> std::io::Result<Vec<v3mc::Bone>> {
     let num_joints = skin.joints().count();
     if num_joints > v3mc::MAX_BONES {
         let err_msg = format!("too many bones: found {} but only {} are supported", num_joints, v3mc::MAX_BONES);
         return Err(new_custom_error(err_msg));
     }
 
-    let inverse_bind_matrices: Vec<_> = skin.reader(|buffer| Some(&buffers[buffer.index()]))
+    let inverse_bind_matrices: Vec<_> = skin.reader(|buffer| ctx.get_buffer_data(buffer))
         .read_inverse_bind_matrices()
         .expect("expected inverse bind matrices")
         .collect();
