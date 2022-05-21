@@ -18,6 +18,7 @@ use std::iter;
 use std::error::Error;
 use std::path::Path;
 use serde_derive::Deserialize;
+use clap::Parser;
 use import::BufferData;
 use io_utils::new_custom_error;
 use material::{convert_material, create_mesh_material_ref};
@@ -549,18 +550,22 @@ fn convert_gltf_to_v3mc(input_file_name: &str, output_file_name_opt: Option<&str
     Ok(())
 }
 
+#[derive(Parser, Debug)]
+#[clap(author, version, about, long_about = None)]
+struct Args {
+    /// Input GLTF filename
+    input_file: String,
+
+    /// Input GLTF file
+    output_file: Option<String>,
+}
+
 fn main() {
+    let args = Args::parse();
+
     println!("GLTF to V3M/V3C converter {} by Rafalh", env!("CARGO_PKG_VERSION"));
-
-    let mut args = env::args();
-    let app_name = args.next().unwrap();
-    if env::args().len() < 2 {
-        println!("Usage: {} input_file_name.gltf [output_file_name.v3m]", app_name);
-        std::process::exit(1);
-    }
-
-    let input_file_name = args.next().unwrap();
-    let output_file_name = args.next();
+    let input_file_name = args.input_file;
+    let output_file_name = args.output_file;
 
     if let Err(e) = convert_gltf_to_v3mc(&input_file_name, output_file_name.as_deref()) {
         eprintln!("Error: {}", e);
