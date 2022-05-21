@@ -16,3 +16,4 @@ panic = "abort"
 # See https://github.com/rust-lang/rust/issues/12859 and https://github.com/rust-lang/rust/issues/79609
 panic = "abort"
 lto = true
+strip = true
