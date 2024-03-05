@@ -187,7 +187,7 @@ fn create_vpp(packfile_path: &str, file_list: &[String], verbose: bool) -> Resul
         }
     }
 
-    let pos = file.seek(SeekFrom::Current(0))?;
+    let pos = file.stream_position()?;
     file.seek(SeekFrom::Start(0))?;
     hdr.size = pos as u32;
     hdr.write(&mut file)?;
@@ -250,7 +250,7 @@ fn format_size(bytes: u32) -> String {
         return format!("{} KB", kb);
     }
     let mb = kb / 1024;
-    return format!("{} MB", mb);
+    format!("{} MB", mb)
 
 }
 

@@ -43,7 +43,7 @@ fn parse_args() -> ParsedArgs {
         }
     }
 
-    let op = op_opt.unwrap_or_else(|| {
+    let op = op_opt.unwrap_or({
         match positional.len() {
             1 => Operation::Info,
             2 => Operation::Convert,

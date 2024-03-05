@@ -237,7 +237,7 @@ fn extract_mpeg_video<R: Read>(rdr: &mut R, e: &PegFileEntry, output_dir: Option
     println!("MPEG2 video header: {:x} {:x} {} {}", total_size, unk0, unk1, unk2);
 
     let output_filename = format!("{}/{}.mpg", output_dir.unwrap_or("."), e.filename);
-    let mut wrt = BufWriter::new(File::create(&output_filename)?);
+    let mut wrt = BufWriter::new(File::create(output_filename)?);
 
     let mut buf = [0u8; 4096];
     let mut bytes_left = (total_size - 16) as usize;
@@ -344,7 +344,7 @@ fn parse_args() -> ParsedArgs {
         }
     }
 
-    let op = op_opt.unwrap_or_else(|| {
+    let op = op_opt.unwrap_or({
         if !positional.is_empty() {
             Operation::Info
         } else {

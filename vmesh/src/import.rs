@@ -63,7 +63,7 @@ impl<'a> Scheme<'a> {
 
     fn read(base: &Path, uri: &str) -> Result<Vec<u8>> {
         match Scheme::parse(uri) {
-            Scheme::Data(_, base64) => base64::decode(&base64).map_err(|_| Error::Io(io::Error::new(io::ErrorKind::Other, "Base64"))),
+            Scheme::Data(_, base64) => base64::decode(base64).map_err(|_| Error::Io(io::Error::new(io::ErrorKind::Other, "Base64"))),
             Scheme::File(path) => read_to_end(path),
             Scheme::Relative => read_to_end(base.join(uri)),
             Scheme::Unsupported => Err(Error::Io(io::Error::new(io::ErrorKind::Other, "Unsupported"))),

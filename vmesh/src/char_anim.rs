@@ -274,7 +274,7 @@ fn make_rfa(anim: &gltf::Animation, skin: &gltf::Skin, ctx: &Context) -> rfa::Fi
 }
 
 pub(crate) fn convert_animation_to_rfa(anim: &gltf::Animation, index: usize, skin: &gltf::Skin, ctx: &Context) -> std::io::Result<()> {
-    let name = anim.name().map_or_else(|| format!("anim_{}", index), &str::to_owned);
+    let name = anim.name().map_or_else(|| format!("anim_{}", index), str::to_owned);
     let file_name = ctx.output_dir.join(format!("{}.rfa", name));
     if ctx.args.verbose >= 1 {
         println!("Exporting animation: {} -> {}", name, file_name.display());
@@ -298,7 +298,7 @@ fn get_joint_parent<'a>(node: &gltf::Node, skin: &gltf::Skin<'a>) -> Option<gltf
 }
 
 fn convert_bone(n: &gltf::Node, inverse_bind_matrix: &[[f32; 4]; 4], index: usize, skin: &gltf::Skin) -> v3mc::Bone {
-    let name = n.name().map_or_else(|| format!("bone_{}", index), &str::to_owned);
+    let name = n.name().map_or_else(|| format!("bone_{}", index), str::to_owned);
     let parent_node_opt = get_joint_parent(n, skin);
     let parent_index = parent_node_opt
         .map_or(-1, |pn| get_joint_index(&pn, skin) as i32);

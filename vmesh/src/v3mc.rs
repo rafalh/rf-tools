@@ -281,7 +281,7 @@ impl MeshDataBlock {
 }
 
 fn write_v3mc_data_block_padding<W: Write + Seek>(wrt: &mut W) -> std::io::Result<()> {
-    let mut pos = wrt.seek(SeekFrom::Current(0))?;
+    let mut pos = wrt.stream_position()?;
     while pos & 0xF != 0 {
         wrt.write_u8(0)?;
         pos += 1;

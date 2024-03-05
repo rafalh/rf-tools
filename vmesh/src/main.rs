@@ -547,7 +547,7 @@ fn generate_output_file_name(input_file_name: &Path, output_file_name_opt: Optio
         .map_or_else(|| {
             let output_ext = if is_character { "v3c" } else { "v3m" };
             input_file_name.with_extension(output_ext)
-        }, &Path::to_owned)
+        }, Path::to_owned)
 }
 
 fn convert_gltf_to_v3mc(args: Args) -> Result<(), Box<dyn Error>> {

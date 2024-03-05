@@ -19,16 +19,16 @@ impl File {
             morph_vert_data_offset: 0,
             bone_offsets: vec![0; self.bones.len()],
         };
-        let offsets_struct_offset = wrt.seek(SeekFrom::Current(0))?;
+        let offsets_struct_offset = wrt.stream_position()?;
         offsets.write(wrt)?;
         
         for (i, b) in self.bones.iter().enumerate() {
-            let bone_offset = wrt.seek(SeekFrom::Current(0))?;
+            let bone_offset = wrt.stream_position()?;
             offsets.bone_offsets[i] = bone_offset as i32;
             b.write(wrt)?;
         }
-        offsets.morph_vert_mappings_offset = wrt.seek(SeekFrom::Current(0))? as i32;
-        offsets.morph_vert_data_offset = wrt.seek(SeekFrom::Current(0))? as i32;
+        offsets.morph_vert_mappings_offset = wrt.stream_position()? as i32;
+        offsets.morph_vert_data_offset = wrt.stream_position()? as i32;
 
         wrt.seek(SeekFrom::Start(offsets_struct_offset))?;
         offsets.write(wrt)?;
