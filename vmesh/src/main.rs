@@ -274,13 +274,15 @@ fn create_mesh_chunk(prim: &gltf::Primitive, index: usize, ctx: &Context) -> std
         }
     }
 
-    let num_vecs = vertex_count.try_into().unwrap();
-    let num_faces = tri_count.try_into().unwrap();
-    let vecs_alloc = (vertex_count * 3 * 4).try_into().unwrap();
-    let faces_alloc = (tri_count * 4 * 2).try_into().unwrap();
-    let same_pos_vertex_offsets_alloc = (vertex_count * 2).try_into().unwrap();
-    let wi_alloc = (vertex_count * 2 * 4).try_into().unwrap();
-    let uvs_alloc = (vertex_count * 2 * 4).try_into().unwrap();
+    const TOO_MANY_VERTICES: &str = "Too many vertices";
+    const TOO_MANY_TRIANGLES: &str = "Too many triangles";
+    let num_vecs = vertex_count.try_into().expect(TOO_MANY_VERTICES);
+    let num_faces = tri_count.try_into().expect(TOO_MANY_TRIANGLES);
+    let vecs_alloc = (vertex_count * 3 * 4).try_into().expect(TOO_MANY_VERTICES);
+    let faces_alloc = (tri_count * 4 * 2).try_into().expect(TOO_MANY_TRIANGLES);
+    let same_pos_vertex_offsets_alloc = (vertex_count * 2).try_into().expect(TOO_MANY_VERTICES);
+    let wi_alloc = (vertex_count * 2 * 4).try_into().expect(TOO_MANY_VERTICES);
+    let uvs_alloc = (vertex_count * 2 * 4).try_into().expect(TOO_MANY_VERTICES);
     let render_mode = material::compute_render_mode_for_material(&prim.material());
     Ok(v3mc::MeshChunk{
         num_vecs,
