@@ -185,7 +185,7 @@ pub struct Args {
     /// Input GLTF filename
     input_file: PathBuf,
 
-    /// Input GLTF file
+    /// Output filename
     output_file: Option<PathBuf>,
 
     /// Output file format. If not specified format is detected from output file extension and input file content.
