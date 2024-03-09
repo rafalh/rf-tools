@@ -18,6 +18,7 @@ use std::f32;
 use std::error::Error;
 use std::path::Path;
 use clap::ArgAction;
+use clap::ValueEnum;
 use gltf::Buffer;
 use clap::Parser;
 use math_utils::{
@@ -101,12 +102,37 @@ impl Context {
     }
 }
 
-fn generate_output_file_name(input_file_name: &Path, output_file_name_opt: Option<&Path>, is_character: bool) -> PathBuf {
-    output_file_name_opt
+#[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, ValueEnum)]
+enum Format {
+    V3m,
+    V3c,
+    Rfg,
+}
+
+fn determine_output_format(args: &Args, is_character: bool) -> Format {
+    args.format.unwrap_or_else(|| {
+        let ext = args.output_file.as_ref()
+            .and_then(|path| path.extension())
+            .and_then(OsStr::to_str);
+        match ext {
+            Some("v3m") => Format::V3m,
+            Some("v3c") => Format::V3c,
+            Some("rfg") => Format::Rfg,
+            _ => if is_character { Format::V3c } else { Format::V3m },
+        }
+    })
+}
+
+fn determine_output_file_name(args: &Args, output_format: Format) -> PathBuf {
+    args.output_file.as_ref()
         .map_or_else(|| {
-            let output_ext = if is_character { "v3c" } else { "v3m" };
-            input_file_name.with_extension(output_ext)
-        }, Path::to_owned)
+            let ext = match output_format {
+                Format::V3m => "v3m",
+                Format::V3c => "v3c",
+                Format::Rfg => "rfg",
+            };
+            args.input_file.with_extension(ext)
+        }, |p| p.clone())
 }
 
 fn do_convert(args: Args) -> Result<(), Box<dyn Error>> {
@@ -123,15 +149,16 @@ fn do_convert(args: Args) -> Result<(), Box<dyn Error>> {
     let buffers = gltf::import_buffers(&document, input_path.parent(), blob)?;
     let skin_opt = document.skins().next();
     let is_character = skin_opt.is_some();
-    let output_file_name = generate_output_file_name(&args.input_file, args.output_file.as_deref(), is_character);
+
+    let output_format = determine_output_format(&args, is_character);
+    let output_file_name = determine_output_file_name(&args, output_format);
     let output_dir = output_file_name.parent().unwrap().to_owned();
 
     if args.verbose >= 1 {
         println!("Exporting mesh: {}", output_file_name.display());
     }
     let ctx = Context { buffers, is_character, args, output_dir };
-    let output_file_ext = output_file_name.extension().and_then(OsStr::to_str);
-    if output_file_ext == Some("rfg") {
+    if output_format == Format::Rfg {
         let rfg = rfg_convert::convert_gltf_to_rfg(&document, &ctx)?;
         let file = File::create(output_file_name)?;
         let mut wrt = BufWriter::new(file);
@@ -148,7 +175,6 @@ fn do_convert(args: Args) -> Result<(), Box<dyn Error>> {
             }
         }
     }
-    
 
     Ok(())
 }
@@ -161,6 +187,10 @@ pub struct Args {
 
     /// Input GLTF file
     output_file: Option<PathBuf>,
+
+    /// Output file format. If not specified format is detected from output file extension and input file content.
+    #[clap(short, long)]
+    format: Option<Format>,
 
     /// Default animation weight to be used when it is not defined in bone extras.
     /// Default is 10 if bone is animated, 2 otherwise
@@ -177,7 +207,7 @@ pub struct Args {
     #[clap(long)]
     ramp_out_time: Option<f32>,
 
-    /// Enable verbose output
+    /// Enable verbose output. Can be used 2 times to increase verbosity
     #[clap(short, long, action = ArgAction::Count)]
     verbose: u8,
 }
