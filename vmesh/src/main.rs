@@ -20,6 +20,7 @@ use std::f32;
 use std::iter;
 use std::error::Error;
 use std::path::Path;
+use clap::ArgAction;
 use gltf::Buffer;
 use rfg_convert::convert_gltf_to_rfg;
 use serde_derive::Deserialize;
@@ -623,8 +624,8 @@ pub struct Args {
     ramp_out_time: Option<f32>,
 
     /// Enable verbose output
-    #[clap(short, long, parse(from_occurrences))]
-    verbose: usize,
+    #[clap(short, long, action = ArgAction::Count)]
+    verbose: u8,
 }
 
 fn main() {
