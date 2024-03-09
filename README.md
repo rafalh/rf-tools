@@ -18,24 +18,7 @@ Use them on your own risk.
 Build
 -----
 
-Tools written in C++ use CMake for building.
-
-Windows:
-
-Generate project files in CMake and build using your favorite IDE.
-
-Ubuntu (MinGW):
-
-    # Install MinGW
-    sudo apt install mingw-w64
-    # Configure build
-    mkdir -p build
-    cd build
-    cmake .. -DCMAKE_TOOLCHAIN_FILE=../cmake/mingw-ubuntu.cmake -DCMAKE_BUILD_TYPE=Release
-    # Build
-    make -j8
-
-Tools written in Rust use Cargo for building.
+Tools use Cargo for building.
 
 You need Rust installed.
 
@@ -48,7 +31,6 @@ To cross-compile for Windows (e.g. from Linux):
     cargo build --release --target=i686-pc-windows-gnu
 
 Note: you may need additional packages (e.g. `mingw-w64` in Ubuntu).
-
 
 License
 -------
