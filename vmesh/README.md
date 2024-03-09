@@ -2,8 +2,8 @@
 VMesh
 =====
 
-VMesh tool converts 3D meshes in GLTF format to V3M (static mesh) and V3C (character mesh) formats.
-V3M and V3C formats are used by Red Faction game on PC platform.
+VMesh tool converts 3D meshes in GLTF format to V3M (static mesh) V3C (character mesh) or RFG (Red Faction editor group) formats.
+V3M, V3C and RFG formats are used by Red Faction game on PC platform.
 
 Collision spheres
 -----------------

@@ -600,7 +600,7 @@ fn convert_gltf_to_v3mc(args: Args) -> Result<(), Box<dyn Error>> {
 }
 
 #[derive(Parser, Debug)]
-#[clap(author, version, about, about = "GLTF to V3M/V3C converter")]
+#[clap(author, version, about, about = "GLTF to V3M/V3C/RFG converter")]
 pub struct Args {
     /// Input GLTF filename
     input_file: PathBuf,
