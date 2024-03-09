@@ -1,6 +1,6 @@
 use glam::Quat;
 
-use crate::{gltf_to_rf_face, gltf_to_rf_quat, gltf_to_rf_vec, io_utils::new_custom_error, math_utils::{compute_triangle_plane, generate_uv}, rfg::{Brush, Face, FaceVertex, Group, Rfg, Solid}, BoxResult, Context};
+use crate::{gltf_to_rf_face, gltf_to_rf_quat, gltf_to_rf_vec, io_utils::new_custom_error, material::get_material_base_color_texture_name, math_utils::{compute_triangle_plane, generate_uv}, rfg::{Brush, Face, FaceVertex, Group, Rfg, Solid}, BoxResult, Context};
 
 pub fn convert_gltf_to_rfg(doc: &gltf::Document, ctx: &Context) -> BoxResult<Rfg> {
     let mut next_uid = 1;
@@ -60,8 +60,10 @@ fn convert_primitive(uid: i32, prim: gltf::Primitive, ctx: &Context, transform: 
             }
         })
         .collect();
+
+    let texture = get_material_base_color_texture_name(&prim.material());
     let solid = Solid {
-        textures: vec!["Rck_Default.tga".to_owned()], // TODO
+        textures: vec![texture],
         vertices: vecs,
         faces,
     };

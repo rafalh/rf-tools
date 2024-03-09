@@ -46,7 +46,7 @@ fn change_texture_ext_to_tga(name: &str) -> String {
     String::from(Path::new(name).with_extension("tga").file_name().unwrap().to_string_lossy())
 }
 
-fn get_material_base_color_texture_name(material: &gltf::material::Material) -> String {
+pub(crate) fn get_material_base_color_texture_name(material: &gltf::material::Material) -> String {
     const DEFAULT_TEXTURE: &str = "Rck_Default.tga";
     if let Some(tex_info) = material.pbr_metallic_roughness().base_color_texture() {
         let tex = tex_info.texture();
