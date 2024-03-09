@@ -53,13 +53,31 @@ pub(crate) fn compute_triangle_plane(p0: &Vector3, p1: &Vector3, p2: &Vector3) -
 
 pub(crate) fn generate_uv(pos: &Vector3, n: &Vector3) -> [f32; 2] {
     if n[0].abs() >= n[1].abs().max(n[2].abs()) {
-        // X is greatest - left or right side
-        [pos[0] + pos[2] * n[0].signum(), pos[1]]
+        // X is greatest
+        if n[0] >= 0.0 {
+            // right side
+            [pos[2], pos[1]]
+        } else {
+            // left side
+            [pos[1], pos[2]]
+        }
     } else if n[1].abs() >= n[0].abs().max(n[2].abs()) {
-        // Y is greatest - top or bottom side
-        [pos[0] * n[1].signum(), pos[2]]
+        // Y is greatest
+        if n[1] >= 0.0 {
+            // top side
+            [pos[0], pos[2]]
+        } else {
+            // bottom side
+            [pos[2], pos[0]]
+        }
     } else {
-        // Z is greatest - front or back side
-        [pos[2] + pos[0] * n[2].signum(), pos[1]]
+        // Z is greatest
+        if n[2] >= 0.0 {
+            // front side
+            [pos[1], pos[0]]
+        } else {
+            // back side
+            [pos[0], pos[1]]
+        }
     }
 }
