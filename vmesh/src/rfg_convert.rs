@@ -1,4 +1,4 @@
-use glam::Quat;
+use glam::{Quat, Vec3};
 
 use crate::{gltf_to_rf_face, gltf_to_rf_quat, gltf_to_rf_vec, io_utils::new_custom_error, material::get_material_base_color_texture_name, math_utils::{compute_triangle_plane, generate_uv}, rfg::{Brush, Face, FaceVertex, Group, Rfg, Solid}, BoxResult, Context};
 
@@ -24,12 +24,13 @@ fn convert_primitive(uid: i32, prim: gltf::Primitive, ctx: &Context, transform: 
     if prim.mode() != gltf::mesh::Mode::Triangles {
         return Err(new_custom_error("only triangle list primitives are supported")); // FIXME
     }
-    // TODO: apply scale?
-    let (_scale, rotation, translation) = transform.to_scale_rotation_translation();
+
+    let (scale, rotation, translation) = transform.to_scale_rotation_translation();
     let reader = prim.reader(|buffer| ctx.get_buffer_data(buffer));
     let vecs: Vec<_> = reader.read_positions()
         .expect("mesh has no positions")
         .map(gltf_to_rf_vec)
+        .map(|v| (Vec3::from_array(v) * scale).to_array())
         .collect();
     let uvs_opt: Option<Vec<_>> = reader.read_tex_coords(0)
         .map(|iter| iter.into_f32().collect());
