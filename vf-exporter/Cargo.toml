@@ -1,0 +1,10 @@
+[package]
+name = "vf-exporter"
+version = "0.1.0"
+authors.workspace = true
+edition.workspace = true
+
+[dependencies]
+byteorder = "1"
+binrw = "0.13"
+clap = { version = "4", features = ["derive"] }
