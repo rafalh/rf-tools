@@ -1,4 +1,4 @@
-use std::io::Write;
+use std::{convert::TryInto, io::Write};
 use byteorder::{ByteOrder, LittleEndian, WriteBytesExt};
 
 pub(crate) trait WriteExt: Write {
@@ -31,6 +31,12 @@ pub(crate) trait WriteExt: Write {
         self.write_all(bytes)?;
         let padding = vec![0_u8; size - bytes.len()];
         self.write_all(&padding)?;
+        Ok(())
+    }
+
+    fn write_vstr(&mut self, string: &str) -> std::io::Result<()> {
+        self.write_u16::<LittleEndian>(string.len().try_into().unwrap())?;
+        self.write_all(string.as_bytes())?;
         Ok(())
     }
 }

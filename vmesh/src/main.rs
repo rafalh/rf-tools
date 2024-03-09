@@ -5,7 +5,10 @@ mod v3mc;
 mod rfa;
 mod char_anim;
 mod material;
+mod rfg;
+mod rfg_convert;
 
+use std::ffi::OsStr;
 use std::io::Cursor;
 use std::fs::File;
 use std::io::BufWriter;
@@ -19,6 +22,7 @@ use std::iter;
 use std::error::Error;
 use std::path::Path;
 use gltf::Buffer;
+use rfg_convert::convert_gltf_to_rfg;
 use serde_derive::Deserialize;
 use clap::Parser;
 use import::BufferData;
@@ -27,6 +31,8 @@ use material::{convert_material, create_mesh_material_ref};
 use math_utils::{
     Matrix3, Matrix4, Vector3, compute_triangle_plane, generate_uv, get_vector_len, transform_normal, transform_point
 };
+
+pub type BoxResult<T> = Result<T, Box<dyn Error>>;
 
 // glTF defines -X as right, RF defines +X as right
 // Both glTF and RF defines +Y as up, +Z as forward
@@ -42,7 +48,7 @@ pub(crate) fn gltf_to_rf_quat(quat: [f32; 4]) -> [f32; 4] {
     [-quat[0], quat[1], quat[2], quat[3]]
 }
 
-fn gltf_to_rf_face(vindices: [u16; 3]) -> [u16; 3] {
+pub(crate) fn gltf_to_rf_face<T: Copy>(vindices: [T; 3]) -> [T; 3] {
     // because we convert from right-handed to left-handed order of vertices must be flipped to
     // fix backface culling
     [vindices[0], vindices[2], vindices[1]]
@@ -571,19 +577,63 @@ fn convert_gltf_to_v3mc(args: Args) -> Result<(), Box<dyn Error>> {
         println!("Exporting mesh: {}", output_file_name.display());
     }
     let ctx = Context { buffers, is_character, args, output_dir };
-    let v3m = make_v3mc_file(&document, &ctx)?;
-    let file = File::create(output_file_name)?;
-    let mut wrt = BufWriter::new(file);
-    v3m.write(&mut wrt)?;
-
-    if let Some(skin) = skin_opt {
-        for (i, anim) in document.animations().enumerate() {
-            char_anim::convert_animation_to_rfa(&anim, i, &skin, &ctx)?;
+    let output_file_ext = output_file_name.extension().and_then(OsStr::to_str);
+    if output_file_ext == Some("rfg") {
+        let rfg = convert_gltf_to_rfg(&document, &ctx)?;
+        let file = File::create(output_file_name)?;
+        let mut wrt = BufWriter::new(file);
+        rfg.write(&mut wrt)?;
+    } else {
+        let v3m = make_v3mc_file(&document, &ctx)?;
+        let file = File::create(output_file_name)?;
+        let mut wrt = BufWriter::new(file);
+        v3m.write(&mut wrt)?;
+    
+        if let Some(skin) = skin_opt {
+            for (i, anim) in document.animations().enumerate() {
+                char_anim::convert_animation_to_rfa(&anim, i, &skin, &ctx)?;
+            }
         }
     }
+    
 
     Ok(())
 }
+
+// fn convert_gltf_to_rfg() -> Result<(), Box<dyn Error>> {
+//     if args.verbose >= 1 {
+//         println!("Importing GLTF file: {}", args.input_file.display());
+//     }
+//     let input_path = Path::new(&args.input_file);
+//     let gltf = gltf::Gltf::open(input_path)?;
+//     let gltf::Gltf { document, blob } = gltf;
+
+//     if args.verbose >= 2 {
+//         println!("Importing GLTF buffers");
+//     }
+//     let buffers = import::import_buffer_data(&document, input_path.parent(), blob)?;
+//     let skin_opt = document.skins().next();
+//     let is_character = skin_opt.is_some();
+//     let output_file_name = generate_output_file_name(&args.input_file, args.output_file.as_deref(), is_character);
+//     let output_dir = output_file_name.parent().unwrap().to_owned();
+
+//     if args.verbose >= 1 {
+//         println!("Exporting mesh: {}", output_file_name.display());
+//     }
+//     let ctx = Context { buffers, is_character, args, output_dir };
+//     let v3m = make_v3mc_file(&document, &ctx)?;
+//     let file = File::create(output_file_name)?;
+//     let mut wrt = BufWriter::new(file);
+//     v3m.write(&mut wrt)?;
+
+//     if let Some(skin) = skin_opt {
+//         for (i, anim) in document.animations().enumerate() {
+//             char_anim::convert_animation_to_rfa(&anim, i, &skin, &ctx)?;
+//         }
+//     }
+
+//     Ok(())
+// }
 
 #[derive(Parser, Debug)]
 #[clap(author, version, about, about = "GLTF to V3M/V3C converter")]
