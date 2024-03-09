@@ -28,7 +28,7 @@ Build from repository root directory:
 
 To cross-compile for Windows (e.g. from Linux):
 
-    cargo build --release --target=i686-pc-windows-gnu
+    cargo build --release --target=x86_64-pc-windows-gnu
 
 Note: you may need additional packages (e.g. `mingw-w64` in Ubuntu).
 
