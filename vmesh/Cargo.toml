@@ -1,6 +1,6 @@
 [package]
 name = "vmesh"
-version = "0.3.6"
+version = "0.4.0"
 authors = ["Rafał Harabień <rafalh92@outlook.com>"]
 edition = "2018"
 
