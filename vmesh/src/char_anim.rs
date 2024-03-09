@@ -7,7 +7,8 @@ use gltf::animation::Interpolation;
 use gltf::animation::util::{ReadInputs, ReadOutputs};
 use serde_json::Value;
 use serde_derive::Deserialize;
-use crate::{rfa, v3mc, gltf_to_rf_quat, gltf_to_rf_vec, get_node_extras, Context};
+use crate::{rfa, v3mc, gltf_to_rf_quat, gltf_to_rf_vec, Context};
+use crate::v3mc_convert::get_node_extras;
 use crate::io_utils::new_custom_error;
 
 #[derive(Deserialize, Debug, Default)]
