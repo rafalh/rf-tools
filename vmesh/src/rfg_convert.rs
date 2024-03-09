@@ -29,7 +29,7 @@ fn convert_primitive(uid: i32, prim: gltf::Primitive, ctx: &Context, transform: 
     let reader = prim.reader(|buffer| ctx.get_buffer_data(buffer));
     let vecs: Vec<_> = reader.read_positions()
         .expect("mesh has no positions")
-        .map(|pos| gltf_to_rf_vec(pos))
+        .map(gltf_to_rf_vec)
         .collect();
     let uvs_opt: Option<Vec<_>> = reader.read_tex_coords(0)
         .map(|iter| iter.into_f32().collect());

@@ -96,7 +96,7 @@ impl Solid {
         wrt.write_vstr("")?; // modifiability
         wrt.write_u32::<LittleEndian>(self.textures.len().try_into().unwrap())?; // num_textures
         for texture in &self.textures {
-            wrt.write_vstr(&texture)?;
+            wrt.write_vstr(texture)?;
         }
         wrt.write_u32::<LittleEndian>(0)?; // num_face_scroll_data
         wrt.write_u32::<LittleEndian>(0)?; // num_rooms
