@@ -1,4 +1,3 @@
-mod import;
 mod io_utils;
 mod math_utils;
 mod v3mc;
@@ -25,7 +24,6 @@ use gltf::Buffer;
 use rfg_convert::convert_gltf_to_rfg;
 use serde_derive::Deserialize;
 use clap::Parser;
-use import::BufferData;
 use io_utils::new_custom_error;
 use material::{convert_material, create_mesh_material_ref};
 use math_utils::{
@@ -536,7 +534,7 @@ fn make_v3mc_file(doc: &gltf::Document, ctx: &Context) -> Result<v3mc::File, Box
 }
 
 struct Context {
-    buffers: Vec<BufferData>,
+    buffers: Vec<gltf::buffer::Data>,
     is_character: bool,
     args: Args,
     output_dir: PathBuf,
@@ -567,7 +565,7 @@ fn convert_gltf_to_v3mc(args: Args) -> Result<(), Box<dyn Error>> {
     if args.verbose >= 2 {
         println!("Importing GLTF buffers");
     }
-    let buffers = import::import_buffer_data(&document, input_path.parent(), blob)?;
+    let buffers = gltf::import_buffers(&document, input_path.parent(), blob)?;
     let skin_opt = document.skins().next();
     let is_character = skin_opt.is_some();
     let output_file_name = generate_output_file_name(&args.input_file, args.output_file.as_deref(), is_character);
