@@ -131,14 +131,14 @@ fn build_output_filename(prefix: &Path, mipmap_idx: u32, frame_idx: u32) -> Path
     let mut file_name = prefix.file_name().unwrap().to_owned();
     file_name.push("-");
     if mipmap_idx > 0 {
-        let c: char = (u32::from('a') as u32 + mipmap_idx - 1).try_into().unwrap();
+        let c: char = (u32::from('a') + mipmap_idx - 1).try_into().unwrap();
         file_name.push(c.to_string());
     }
     file_name.push(format!("{:04}.tga", frame_idx));
     prefix.with_file_name(file_name)
 }
 
-fn export_vbm(vbm_filename: &Path, output_prefix: &Path, verbose: bool) -> Result<()> {
+fn export_vbm(vbm_filename: &Path, output_dir: &Path, verbose: bool) -> Result<()> {
     let file = File::open(vbm_filename)?;
     let mut vbm_reader = BufReader::new(file);
     let hdr: VbmHeader = vbm_reader.read_le()?;
@@ -146,7 +146,7 @@ fn export_vbm(vbm_filename: &Path, output_prefix: &Path, verbose: bool) -> Resul
         println!("Processing {}...", vbm_filename.display());
         print_vbm_metadata(&hdr);
     }
-    let prefix = output_prefix.join(vbm_filename.file_stem().unwrap());
+    let prefix = output_dir.join(vbm_filename.file_stem().unwrap());
     let mut pixel_data = vec![0u8; (hdr.width * hdr.height * 2) as usize]; // 16 bit
     
     for frame_idx in 0..hdr.num_frames {
@@ -173,11 +173,12 @@ fn export_vbm(vbm_filename: &Path, output_prefix: &Path, verbose: bool) -> Resul
 #[clap(author, version, about, about = "VBM exporter")]
 pub struct Args {
     /// Input VBM files
-    input_files: Vec<PathBuf>,
+    #[clap(required = true)]
+    vbm_files: Vec<PathBuf>,
 
     /// Output directory
-    #[clap(short = 'O', default_value = "")]
-    output_prefix: PathBuf,
+    #[clap(short = 'O', default_value = ".")]
+    output_dir: PathBuf,
 
     /// Verbose output
     #[clap(short, long)]
@@ -191,8 +192,8 @@ fn main() -> Result<()> {
         println!("vbm-exporter {}", env!("CARGO_PKG_VERSION"));
     }
 
-    for input_file in &args.input_files {
-        export_vbm(input_file, &args.output_prefix, args.verbose)?;
+    for input_file in &args.vbm_files {
+        export_vbm(input_file, &args.output_dir, args.verbose)?;
     }
 
     Ok(())
