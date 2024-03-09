@@ -1,0 +1,10 @@
+[package]
+name = "vbm-exporter"
+version = "0.1.0"
+authors = ["Rafał Harabień <rafalh92@outlook.com>"]
+edition = "2021"
+
+[dependencies]
+byteorder = "1"
+binrw = "0.13"
+clap = { version = "4", features = ["derive"] }

@@ -6,6 +6,7 @@ members = [
     "makevbm",
     "vsound",
     "peg",
+    "vbm-exporter"
 ]
 resolver = "2"
 

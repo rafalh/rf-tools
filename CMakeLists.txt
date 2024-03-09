@@ -21,5 +21,4 @@ if(NOT MSVC)
     set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -s")
 endif()
 
-add_subdirectory(vbm-exporter)
 add_subdirectory(vf-exporter)
