@@ -1,10 +1,8 @@
 [package]
 name = "vpp"
 version = "0.1.0"
-authors = ["Rafał Harabień <rafalh92@outlook.com>"]
-edition = "2021"
-
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+authors.workspace = true
+edition.workspace = true
 
 [dependencies]
 log = "0.4"

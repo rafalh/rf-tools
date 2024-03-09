@@ -1,5 +1,4 @@
 [workspace]
-
 members = [
     "vmesh",
     "vpp",
@@ -9,6 +8,10 @@ members = [
     "vbm-exporter"
 ]
 resolver = "2"
+
+[workspace.package]
+authors = ["Rafał Harabień <rafalh92@outlook.com>"]
+edition = "2021"
 
 [profile.dev]
 panic = "abort"

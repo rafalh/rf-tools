@@ -1,8 +1,8 @@
 [package]
 name = "peg"
 version = "0.1.0"
-authors = ["Rafał Harabień <rafalh92@outlook.com>"]
-edition = "2021"
+authors.workspace = true
+edition.workspace = true
 
 [dependencies]
 byteorder = "1"
