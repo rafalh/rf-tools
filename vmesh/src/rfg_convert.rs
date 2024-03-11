@@ -61,30 +61,35 @@ fn create_brush(mesh: gltf::Mesh, uid: i32, ctx: &Context, transform: &glam::Mat
         let uvs_opt: Option<Vec<_>> = reader.read_tex_coords(0)
             .map(|iter| iter.into_f32().collect());
     
-        let indices: Vec<usize> = reader.read_indices()
+        let indices: Vec<u32> = reader.read_indices()
             .expect("mesh has no indices")
             .into_u32()
-            .map(|i| prim_v_index_to_brush_v_index[&(i as usize)])
             .collect();
 
         indices
             .chunks_exact(3)
             .map(|chunk| gltf_to_rf_face([chunk[0], chunk[1], chunk[2]]))
             .map(|chunk| {
-                let (v1, v2, v3) = (&vertices[chunk[0]], &vertices[chunk[1]], &vertices[chunk[2]]);
-                let plane = compute_triangle_plane(v1, v2, v3);
+                let [v1, v2, v3] = chunk
+                    .map(|i| prim_v_index_to_brush_v_index[&(i as usize)])
+                    .map(|i| vertices[i]);
+                let plane = compute_triangle_plane(&v1, &v2, &v3);
                 let plane_normal = [plane[0], plane[1], plane[2]];
                 Face {
                     plane,
                     texture: texture_index as i32,
                     vertices: chunk.iter()
                         .copied()
-                        .map(|index| FaceVertex { 
-                            index: index as u32,
-                            texture_coords: uvs_opt.as_ref().map_or_else(
-                                || generate_uv(&vertices[index as usize], &plane_normal),
+                        .map(|index| {
+                            let brush_v_index = prim_v_index_to_brush_v_index[&(index as usize)];
+                            let texture_coords = uvs_opt.as_ref().map_or_else(
+                                || generate_uv(&vertices[brush_v_index], &plane_normal),
                                 |uvs| uvs[index as usize]
-                            ),
+                            );
+                            FaceVertex { 
+                                index: brush_v_index as u32,
+                                texture_coords,
+                            }
                         })
                         .collect()
                 }
@@ -98,8 +103,8 @@ fn create_brush(mesh: gltf::Mesh, uid: i32, ctx: &Context, transform: &glam::Mat
         faces,
     };
     let pos = gltf_to_rf_vec(translation.to_array());
-    let orient = gltf_to_rf_quat(rotation.to_array());
-    let orient = glam::Mat3::from_quat(Quat::from_array(orient)).to_cols_array();
+    let orient_quat = gltf_to_rf_quat(rotation.to_array());
+    let orient = glam::Mat3::from_quat(Quat::from_array(orient_quat)).to_cols_array();
     let brush = Brush {
         uid,
         pos,
