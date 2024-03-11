@@ -97,6 +97,9 @@ fn create_brush(mesh: gltf::Mesh, uid: i32, ctx: &Context, transform: &glam::Mat
             .for_each(|f| faces.push(f));
     }
 
+    if ctx.args.verbose >= 1 {
+        println!("Brush {}: {} vertices, {} faces", uid, vertices.len(), faces.len());
+    }
     let solid = Solid {
         textures,
         vertices,
