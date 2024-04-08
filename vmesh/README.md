@@ -2,7 +2,7 @@
 VMesh
 =====
 
-VMesh tool converts 3D meshes in GLTF format to V3M (static mesh) V3C (character mesh) or RFG (Red Faction editor group) formats.
+VMesh tool converts 3D meshes in GLTF format to V3M (static mesh), V3C (character mesh) or RFG (Red Faction editor group) formats.
 V3M, V3C and RFG formats are used by Red Faction game on PC platform.
 
 Collision spheres
@@ -42,10 +42,19 @@ animations. Weight of 10 removes state animation influence on the bone.
 Usage
 -----
 
+Mesh conversion (substitute `v3m` by the desired output format):
+
     vmesh input.gltf output.v3m
+    vmesh -f v3m input.gltf
+
+Information about advanced usage:
+
+    vmesh -h
 
 Limitations
 -----------
+
+V3M/V3C:
 
 * Maximal number of vertices in a primitive is 5232.
 * Maximal number of indices in a primitive is 9231 (3077 triangles).
@@ -61,3 +70,9 @@ Limitations
 * Double sided material property is supported. If not enabled back-face culling is used for V3M rendering.
 * Child nodes without mesh attached are exported as prop points (e.g. for glares).
 * Child nodes with meshes are exported as LOD levels and should have `LOD_distance` user property (see above).
+
+RFG:
+
+* Normals are ignored
+* Only base color texture is used
+* Object hierarchy is ignored (each GLTF object is exported as a separate group)
