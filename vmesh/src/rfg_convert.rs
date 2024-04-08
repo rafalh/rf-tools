@@ -18,9 +18,9 @@ pub fn convert_gltf_to_rfg(doc: &gltf::Document, ctx: &Context) -> BoxResult<Rfg
         let Some(mesh) = node.mesh() else { continue };
         let group_name = node.name().unwrap_or_default().to_owned();
         let transform = glam::Mat4::from_cols_array_2d(&node.transform().matrix());
-        let mut brushes = Vec::new();
-        brushes.push(create_brush(mesh, next_uid, ctx, &transform)?);
+        let brush = create_brush(mesh, next_uid, ctx, &transform)?;
         next_uid += 1;
+        let brushes = vec![brush];
         groups.push(Group {
             group_name,
             brushes,

@@ -112,16 +112,16 @@ fn write_tga_frame(
         match vbm_hdr.format {
             VbmColorFormat::_1555 => {
                 let output_pixel = [
-                    (u32::from((input_pixel >> 0) & 0x1F) * 255 / 0x1F) as u8, // B
+                    (u32::from(input_pixel & 0x1F) * 255 / 0x1F) as u8, // B
                     (u32::from((input_pixel >> 5) & 0x1F) * 255 / 0x1F) as u8, // G
                     (u32::from((input_pixel >> 10) & 0x1F) * 255 / 0x1F) as u8, // R
-                    (u32::from(!(input_pixel >> 15)) * 255) as u8,             // A
+                    (u32::from(!(input_pixel >> 15)) * 255) as u8,      // A
                 ];
                 writer.write_all(&output_pixel)?;
             }
             VbmColorFormat::_4444 => {
                 let output_pixel = [
-                    (u32::from((input_pixel >> 0) & 0xF) * 255 / 0xF) as u8, // B
+                    (u32::from(input_pixel & 0xF) * 255 / 0xF) as u8, // B
                     (u32::from((input_pixel >> 4) & 0xF) * 255 / 0xF) as u8, // G
                     (u32::from((input_pixel >> 8) & 0xF) * 255 / 0xF) as u8, // R
                     (u32::from((input_pixel >> 12) & 0xF) * 255 / 0xF) as u8, // A
@@ -130,7 +130,7 @@ fn write_tga_frame(
             }
             VbmColorFormat::_565 => {
                 let output_pixel = [
-                    (u32::from((input_pixel >> 0) & 0xF) * 255 / 0x1F) as u8, // B
+                    (u32::from(input_pixel & 0xF) * 255 / 0x1F) as u8, // B
                     (u32::from((input_pixel >> 5) & 0xF) * 255 / 0x3F) as u8, // G
                     (u32::from((input_pixel >> 11) & 0xF) * 255 / 0x1F) as u8, // R
                 ];
