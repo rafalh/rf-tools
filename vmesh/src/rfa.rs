@@ -1,6 +1,6 @@
-use std::io::{Write, Seek, SeekFrom, Result};
-use byteorder::{LittleEndian, WriteBytesExt};
 use crate::io_utils::WriteExt;
+use byteorder::{LittleEndian, WriteBytesExt};
+use std::io::{Result, Seek, SeekFrom, Write};
 
 pub const RFA_SIGNATURE: u32 = 0x4656_4D56; // 'VMVF'
 pub const RFA_VERSION: i32 = 8; // 'VMVF'
@@ -21,7 +21,7 @@ impl File {
         };
         let offsets_struct_offset = wrt.stream_position()?;
         offsets.write(wrt)?;
-        
+
         for (i, b) in self.bones.iter().enumerate() {
             let bone_offset = wrt.stream_position()?;
             offsets.bone_offsets[i] = bone_offset as i32;
@@ -58,7 +58,7 @@ impl FileHeader {
         wrt.write_u32::<LittleEndian>(RFA_SIGNATURE)?;
         wrt.write_i32::<LittleEndian>(RFA_VERSION)?;
         wrt.write_f32::<LittleEndian>(self.pos_reduction)?;
-        wrt.write_f32::<LittleEndian>(self.rot_reduction)?; 
+        wrt.write_f32::<LittleEndian>(self.rot_reduction)?;
         wrt.write_i32::<LittleEndian>(self.start_time)?;
         wrt.write_i32::<LittleEndian>(self.end_time)?;
         wrt.write_i32::<LittleEndian>(self.num_bones)?;

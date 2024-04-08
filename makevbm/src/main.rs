@@ -1,10 +1,10 @@
 use std::env;
-use std::io;
 use std::fs;
+use std::io;
 use std::path;
 
+use byteorder::{LittleEndian, WriteBytesExt};
 use image::GenericImageView;
-use byteorder::{WriteBytesExt, LittleEndian};
 
 #[derive(Clone, Copy)]
 enum VbmColorMode {
@@ -42,7 +42,11 @@ fn count_frames(prefix: &str, dot_ext: &str) -> u32 {
     i
 }
 
-fn write_frame<W: io::Write>(wrt: &mut W, clr_mode: VbmColorMode, img: &image::DynamicImage) -> Result<(), Box<dyn std::error::Error>> {
+fn write_frame<W: io::Write>(
+    wrt: &mut W,
+    clr_mode: VbmColorMode,
+    img: &image::DynamicImage,
+) -> Result<(), Box<dyn std::error::Error>> {
     for (_, _, pixel) in img.pixels() {
         let (r8, g8, b8, a8) = (pixel[0], pixel[1], pixel[2], pixel[3]);
         match clr_mode {
@@ -53,7 +57,7 @@ fn write_frame<W: io::Write>(wrt: &mut W, clr_mode: VbmColorMode, img: &image::D
                 let a1 = u16::from(a8) >> 7;
                 let data = ((1 - a1) << 15) | (r5 << 10) | (g5 << 5) | b5;
                 wrt.write_u16::<LittleEndian>(data)?;
-            },
+            }
             VbmColorMode::_4444 => {
                 let r4 = u16::from(r8) >> 4;
                 let g4 = u16::from(g8) >> 4;
@@ -61,20 +65,24 @@ fn write_frame<W: io::Write>(wrt: &mut W, clr_mode: VbmColorMode, img: &image::D
                 let a4 = u16::from(a8) >> 4;
                 let data = (a4 << 12) | (r4 << 8) | (g4 << 4) | b4;
                 wrt.write_u16::<LittleEndian>(data)?;
-            },
+            }
             VbmColorMode::_565 => {
                 let r5 = u16::from(r8) >> 3;
                 let g6 = u16::from(g8) >> 2;
                 let b5 = u16::from(b8) >> 3;
                 let data = (r5 << 11) | (g6 << 5) | b5;
                 wrt.write_u16::<LittleEndian>(data)?;
-            },
+            }
         }
     }
     Ok(())
 }
 
-fn make_vbm(color_mode_name: &str, framerate_str: &str, input_file_name: &str) -> Result<(), Box<dyn std::error::Error>> {
+fn make_vbm(
+    color_mode_name: &str,
+    framerate_str: &str,
+    input_file_name: &str,
+) -> Result<(), Box<dyn std::error::Error>> {
     const VBM_SIGNATURE: u32 = 0x6D62762E;
     const VBM_VERSION: u32 = 1;
 
@@ -117,7 +125,9 @@ fn main() {
         println!("Available color modes:");
         println!("  1555 - 5 bits for each RGB channel and 1 bit for alpha channel");
         println!("  4444 - 4 bits for each RGB channel and 4 bit for alpha channel");
-        println!("  565  - 5 bits for red and blue channels, 6 bits for green channel, no alpha channel");
+        println!(
+            "  565  - 5 bits for red and blue channels, 6 bits for green channel, no alpha channel"
+        );
         println!();
         println!("Framerate is only important for animated VBMs (those with more than one frame).");
         println!("Input file name is going to be suffixed with a zero-based frame number. For example when invoked:");

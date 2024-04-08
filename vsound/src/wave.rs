@@ -1,8 +1,7 @@
-use std::fs::File;
-use std::io::{Read, Write, Seek, SeekFrom, BufReader, BufRead, Result};
+use byteorder::{BigEndian, LittleEndian, ReadBytesExt, WriteBytesExt};
 use std::convert::TryInto;
-use byteorder::{ReadBytesExt, WriteBytesExt, BigEndian, LittleEndian};
-
+use std::fs::File;
+use std::io::{BufRead, BufReader, Read, Result, Seek, SeekFrom, Write};
 
 pub struct RiffChunkHeader {
     pub chunk_id: u32,
@@ -98,7 +97,11 @@ impl PcmWaveFormat {
     }
 }
 
-pub fn write_riff_chunk<W: Write + Seek, F: FnMut(&mut W) -> Result<()>>(wrt: &mut W, chunk_id: u32, mut fun: F) -> Result<()> {
+pub fn write_riff_chunk<W: Write + Seek, F: FnMut(&mut W) -> Result<()>>(
+    wrt: &mut W,
+    chunk_id: u32,
+    mut fun: F,
+) -> Result<()> {
     let header_pos = wrt.stream_position()?;
     let mut chunk_hdr = RiffChunkHeader {
         chunk_id,
@@ -117,15 +120,15 @@ pub fn write_riff_chunk<W: Write + Seek, F: FnMut(&mut W) -> Result<()>>(wrt: &m
     Ok(())
 }
 
-pub fn write_wave_file<W: Write + Seek, F: FnMut(&mut W) -> Result<()>>(wrt: &mut W, pcm_wf: &PcmWaveFormat, mut data_fun: F) -> Result<()> {
+pub fn write_wave_file<W: Write + Seek, F: FnMut(&mut W) -> Result<()>>(
+    wrt: &mut W,
+    pcm_wf: &PcmWaveFormat,
+    mut data_fun: F,
+) -> Result<()> {
     write_riff_chunk(wrt, RIFF_CHUNK_ID, |wrt| {
         wrt.write_u32::<BigEndian>(WAVE_FORMAT)?;
-        write_riff_chunk(wrt, FMT_CHUNK_ID, |wrt| {
-            pcm_wf.write(wrt)
-        })?;
-        write_riff_chunk(wrt, DATA_CHUNK_ID, |wrt| {
-            data_fun(wrt)
-        })?;
+        write_riff_chunk(wrt, FMT_CHUNK_ID, |wrt| pcm_wf.write(wrt))?;
+        write_riff_chunk(wrt, DATA_CHUNK_ID, |wrt| data_fun(wrt))?;
         Ok(())
     })
 }

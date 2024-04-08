@@ -1,7 +1,7 @@
-use std::io::{Write, Seek, SeekFrom, Result};
-use std::convert::TryInto;
-use byteorder::{LittleEndian, WriteBytesExt};
 use crate::io_utils::WriteExt;
+use byteorder::{LittleEndian, WriteBytesExt};
+use std::convert::TryInto;
+use std::io::{Result, Seek, SeekFrom, Write};
 
 // File signatures
 pub const V3M_SIGNATURE: u32 = 0x5246_3344; // RF3D
@@ -11,13 +11,12 @@ pub const V3C_SIGNATURE: u32 = 0x5246_434D; // RFCM
 pub const VERSION: u32 = 0x40000;
 
 // File chunk types
-pub const END_CHUNK: u32       = 0x0000_0000; // terminating section
-pub const SUBMESH_CHUNK: u32   = 0x5355_424D; // 'SUBM'
-pub const CSPHERE_CHUNK: u32   = 0x4353_5048; // 'CSPH'
-pub const BONE_CHUNK: u32      = 0x424F_4E45; // 'BONE'
+pub const END_CHUNK: u32 = 0x0000_0000; // terminating section
+pub const SUBMESH_CHUNK: u32 = 0x5355_424D; // 'SUBM'
+pub const CSPHERE_CHUNK: u32 = 0x4353_5048; // 'CSPH'
+pub const BONE_CHUNK: u32 = 0x424F_4E45; // 'BONE'
 
 pub const MAX_BONES: usize = 50;
-
 
 // Vif mesh flags
 #[allow(unused)]
@@ -40,30 +39,35 @@ impl File {
     pub fn write<W: Write + Seek>(&self, wrt: &mut W) -> Result<()> {
         self.header.write(wrt)?;
         for lod_mesh in &self.lod_meshes {
-            FileChunk{
+            FileChunk {
                 chunk_type: SUBMESH_CHUNK,
                 chunk_size: 0, // ccrunch sets it to 0
-            }.write(wrt)?;
+            }
+            .write(wrt)?;
             lod_mesh.write(wrt)?;
         }
         for csphere in &self.cspheres {
-            FileChunk::write_new(wrt, CSPHERE_CHUNK, |wrt| {
-                csphere.write(wrt)
-            })?;
+            FileChunk::write_new(wrt, CSPHERE_CHUNK, |wrt| csphere.write(wrt))?;
         }
         if !self.bones.is_empty() {
             FileChunk::write_new(wrt, BONE_CHUNK, |wrt| {
-                wrt.write_i32::<LittleEndian>(self.bones.len().try_into().expect("number of bones should fit in i32"))?;
+                wrt.write_i32::<LittleEndian>(
+                    self.bones
+                        .len()
+                        .try_into()
+                        .expect("number of bones should fit in i32"),
+                )?;
                 for bone in &self.bones {
                     bone.write(wrt)?;
                 }
                 Ok(())
             })?;
         }
-        FileChunk{
+        FileChunk {
             chunk_type: END_CHUNK,
             chunk_size: 0,
-        }.write(wrt)
+        }
+        .write(wrt)
     }
 }
 
@@ -72,22 +76,21 @@ pub struct FileHeader {
     pub signature: u32,
     pub version: u32,
     pub num_lod_meshes: i32,
-    pub num_all_vertices: i32, // ccrunch resets value to 0
-    pub num_all_faces: i32, // ccrunch resets value to 0
+    pub num_all_vertices: i32,       // ccrunch resets value to 0
+    pub num_all_faces: i32,          // ccrunch resets value to 0
     pub num_all_vertex_normals: i32, // ccrunch resets value to 0
     pub num_all_materials: i32,
     pub num_all_meshes: i32, // ccrunch resets value to 0
-    pub num_dumbs: i32, // ccrunch resets value to 0 and discards dumb sections
+    pub num_dumbs: i32,      // ccrunch resets value to 0 and discards dumb sections
     pub num_cspheres: i32,
 }
 
 impl FileHeader {
-
     pub fn write<W: Write>(&self, wrt: &mut W) -> Result<()> {
         wrt.write_u32::<LittleEndian>(self.signature)?;
         wrt.write_u32::<LittleEndian>(self.version)?;
         wrt.write_i32::<LittleEndian>(self.num_lod_meshes)?;
-        wrt.write_i32::<LittleEndian>(self.num_all_vertices)?; 
+        wrt.write_i32::<LittleEndian>(self.num_all_vertices)?;
         wrt.write_i32::<LittleEndian>(self.num_all_faces)?;
         wrt.write_i32::<LittleEndian>(self.num_all_vertex_normals)?;
         wrt.write_i32::<LittleEndian>(self.num_all_materials)?;
@@ -110,7 +113,11 @@ impl FileChunk {
         Ok(())
     }
 
-    pub fn write_new<W: Write + Seek, F: FnMut(&mut W) -> Result<()>>(wrt: &mut W, chunk_type: u32, mut fun: F) -> Result<()> {
+    pub fn write_new<W: Write + Seek, F: FnMut(&mut W) -> Result<()>>(
+        wrt: &mut W,
+        chunk_type: u32,
+        mut fun: F,
+    ) -> Result<()> {
         let header_pos = wrt.stream_position()?;
         let mut chunk_hdr = FileChunk {
             chunk_type,
@@ -183,7 +190,7 @@ pub struct Mesh {
     pub chunks: Vec<MeshChunk>,
     pub data_block: Vec<u8>,
     pub num_prop_points: i32,
-    pub textures: Vec<MeshTextureRef>
+    pub textures: Vec<MeshTextureRef>,
 }
 
 impl Mesh {
@@ -261,7 +268,7 @@ pub struct MeshDataBlock {
 
 impl MeshDataBlock {
     pub const VERSION: i32 = 7;
-    
+
     pub fn write<W: Write + Seek>(&self, wrt: &mut W) -> Result<()> {
         for chunk in &self.chunks {
             chunk.write(wrt)?;
@@ -323,17 +330,17 @@ impl MeshChunkData {
             wrt.write_f32_slice_le(pos)?;
         }
         write_v3mc_data_block_padding(wrt)?;
-    
+
         for norm in &self.norms {
             wrt.write_f32_slice_le(norm)?;
         }
         write_v3mc_data_block_padding(wrt)?;
-    
+
         for uv in &self.uvs {
             wrt.write_f32_slice_le(uv)?;
         }
         write_v3mc_data_block_padding(wrt)?;
-    
+
         for face in &self.faces {
             face.write(wrt)?;
         }
@@ -344,18 +351,18 @@ impl MeshChunkData {
             wrt.write_f32_slice_le(p)?;
         }
         write_v3mc_data_block_padding(wrt)?;
-    
+
         // same_pos_vertex_offsets
         for off in &self.same_pos_vertex_offsets {
             wrt.write_i16::<LittleEndian>(*off)?;
         }
         write_v3mc_data_block_padding(wrt)?;
-    
+
         for wi in &self.wi {
             wi.write(wrt)?;
         }
         write_v3mc_data_block_padding(wrt)?;
-    
+
         // if (Mesh::flags & 0x1) { // morph_vertices_map
         //     orig_vert_map: [u16; Mesh::num_vertices];
         //     // padding to 0x10 (to data section begin)
@@ -455,13 +462,13 @@ impl Bone {
 
 #[derive(Default, PartialEq)]
 pub struct Material {
-    pub tex_name: String,  // not used by RF PC
-    pub self_illumination: f32,  // used by static lighting code that is not working in RF PC (it does work in DF)
-    pub specular_level: f32,  // not used by RF PC
-    pub glossiness: f32,  // not used by RF PC
-    pub reflection_amount: f32,  // not used by RF PC
+    pub tex_name: String,       // not used by RF PC
+    pub self_illumination: f32, // used by static lighting code that is not working in RF PC (it does work in DF)
+    pub specular_level: f32,    // not used by RF PC
+    pub glossiness: f32,        // not used by RF PC
+    pub reflection_amount: f32, // not used by RF PC
     pub refl_tex_name: String,  // not used by RF PC
-    pub flags: u32,  // not used by RF PC
+    pub flags: u32,             // not used by RF PC
 }
 
 impl Material {
@@ -536,12 +543,12 @@ pub enum FogType {
 }
 
 pub fn encode_render_mode(
-    tex_src: TextureSource, 
-    color_op: ColorOp, 
-    alpha_op: AlphaOp, 
-    alpha_blend: AlphaBlend, 
-    zbuffer_type: ZbufferType, 
-    fog: FogType
+    tex_src: TextureSource,
+    color_op: ColorOp,
+    alpha_op: AlphaOp,
+    alpha_blend: AlphaBlend,
+    zbuffer_type: ZbufferType,
+    fog: FogType,
 ) -> u32 {
     (tex_src as u32)
         | ((color_op as u32) << 5)

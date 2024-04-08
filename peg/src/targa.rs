@@ -1,5 +1,5 @@
-use std::io::{Write, Result};
-use byteorder::{WriteBytesExt, LittleEndian};
+use byteorder::{LittleEndian, WriteBytesExt};
+use std::io::{Result, Write};
 
 pub struct TgaFileHeader {
     idlength: i8,

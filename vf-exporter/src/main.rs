@@ -1,9 +1,14 @@
 mod tga;
 mod vf;
 
-use std::{error::Error, fs::File, io::{BufReader, BufWriter, Read, Write}, path::{Path, PathBuf}};
 use binrw::{BinReaderExt, BinWriterExt};
 use clap::Parser;
+use std::{
+    error::Error,
+    fs::File,
+    io::{BufReader, BufWriter, Read, Write},
+    path::{Path, PathBuf},
+};
 use tga::TgaHeader;
 use vf::{VfCharDesc, VfFormat, VfHeader, VfPalette};
 
@@ -32,8 +37,18 @@ fn determine_output_image_size(num_pixels: u32) -> (u32, u32) {
     (s, s)
 }
 
-fn write_font_tga(filename: &Path, vf_hdr: &VfHeader, char_desc: &[VfCharDesc], src_data: &[u8], palette: Option<&VfPalette>) -> Result<()> {
-    let vf_bytes_per_pixel: usize = if vf_hdr.format == VfFormat::Rgba4444 { 2 } else { 1 };
+fn write_font_tga(
+    filename: &Path,
+    vf_hdr: &VfHeader,
+    char_desc: &[VfCharDesc],
+    src_data: &[u8],
+    palette: Option<&VfPalette>,
+) -> Result<()> {
+    let vf_bytes_per_pixel: usize = if vf_hdr.format == VfFormat::Rgba4444 {
+        2
+    } else {
+        1
+    };
     let num_pixels = vf_hdr.pixel_data_size / vf_bytes_per_pixel as u32;
     let (w, h) = determine_output_image_size(num_pixels);
     let tga_hdr = TgaHeader::new(w.try_into()?, h.try_into()?, 32);
@@ -64,7 +79,8 @@ fn write_font_tga(filename: &Path, vf_hdr: &VfHeader, char_desc: &[VfCharDesc], 
         // Left and right border
         for off_y in 0..vf_hdr.height + 2 {
             bitmap_data[((dst_y + off_y) * w + dst_x) as usize] = border_clr;
-            bitmap_data[((dst_y + off_y) * w + dst_x + 1 + char_desc[char_idx].width) as usize] = border_clr;
+            bitmap_data[((dst_y + off_y) * w + dst_x + 1 + char_desc[char_idx].width) as usize] =
+                border_clr;
         }
 
         // Copy character pixels
@@ -83,7 +99,8 @@ fn write_font_tga(filename: &Path, vf_hdr: &VfHeader, char_desc: &[VfCharDesc], 
                         dst_pixel_bytes[3] = value;
                     }
                     VfFormat::Rgba4444 => {
-                        let src_pixel = u16::from_le_bytes(src_data[src_offset..src_offset + 1].try_into()?);
+                        let src_pixel =
+                            u16::from_le_bytes(src_data[src_offset..src_offset + 1].try_into()?);
                         let r = (src_pixel) & 0xF;
                         let g = (src_pixel >> 4) & 0xF;
                         let b = (src_pixel >> 8) & 0xF;
@@ -137,9 +154,17 @@ fn export_font(vf_filename: &Path, output_dir: &Path) -> Result<()> {
     } else {
         None
     };
-    
-    let output_path = output_dir.join(vf_filename.file_stem().unwrap()).with_extension("tga");
-    write_font_tga(&output_path, &hdr, &char_desc, &pixel_data, palette.as_ref())?;
+
+    let output_path = output_dir
+        .join(vf_filename.file_stem().unwrap())
+        .with_extension("tga");
+    write_font_tga(
+        &output_path,
+        &hdr,
+        &char_desc,
+        &pixel_data,
+        palette.as_ref(),
+    )?;
     Ok(())
 }
 
@@ -155,7 +180,7 @@ pub struct Args {
 
     /// Verbose output
     #[clap(short, long)]
-    verbose: bool
+    verbose: bool,
 }
 
 fn main() -> Result<()> {

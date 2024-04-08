@@ -1,29 +1,27 @@
-mod io_utils;
-mod math_utils;
-mod v3mc;
-mod v3mc_convert;
-mod rfa;
 mod char_anim;
+mod io_utils;
 mod material;
+mod math_utils;
+mod rfa;
 mod rfg;
 mod rfg_convert;
+mod v3mc;
+mod v3mc_convert;
 
+use clap::ArgAction;
+use clap::Parser;
+use clap::ValueEnum;
+use gltf::Buffer;
+use math_utils::{Matrix3, Matrix4, Vector3};
+use std::env;
+use std::error::Error;
+use std::f32;
 use std::ffi::OsStr;
 use std::fs::File;
 use std::io::BufWriter;
+use std::path::Path;
 use std::path::PathBuf;
 use std::vec::Vec;
-use std::env;
-use std::f32;
-use std::error::Error;
-use std::path::Path;
-use clap::ArgAction;
-use clap::ValueEnum;
-use gltf::Buffer;
-use clap::Parser;
-use math_utils::{
-    Matrix3, Matrix4, Vector3
-};
 
 type BoxResult<T> = Result<T, Box<dyn Error>>;
 
@@ -48,25 +46,34 @@ fn gltf_to_rf_face<T: Copy>(vindices: [T; 3]) -> [T; 3] {
 }
 
 fn build_child_nodes_indices(doc: &gltf::Document) -> Vec<usize> {
-    let mut child_indices: Vec<usize> = doc.nodes().flat_map(|n| n.children().map(|n| n.index())).collect();
+    let mut child_indices: Vec<usize> = doc
+        .nodes()
+        .flat_map(|n| n.children().map(|n| n.index()))
+        .collect();
     child_indices.dedup();
     child_indices
 }
 
 fn get_submesh_nodes(doc: &gltf::Document) -> Vec<gltf::Node> {
     let child_indices = build_child_nodes_indices(doc);
-    doc.nodes().filter(|n| n.mesh().is_some() && !child_indices.contains(&n.index())).collect()
+    doc.nodes()
+        .filter(|n| n.mesh().is_some() && !child_indices.contains(&n.index()))
+        .collect()
 }
 
 fn get_mesh_materials<'a>(mesh: &gltf::Mesh<'a>) -> Vec<gltf::Material<'a>> {
-    let mut materials = mesh.primitives().map(|prim| prim.material())
+    let mut materials = mesh
+        .primitives()
+        .map(|prim| prim.material())
         .collect::<Vec<_>>();
     materials.dedup_by_key(|m| m.index());
     materials
 }
 
 fn get_primitive_vertex_count(prim: &gltf::Primitive) -> usize {
-    prim.attributes().find(|p| p.0 == gltf::mesh::Semantic::Positions).map_or(0, |a| a.1.count())
+    prim.attributes()
+        .find(|p| p.0 == gltf::mesh::Semantic::Positions)
+        .map_or(0, |a| a.1.count())
 }
 
 fn count_mesh_vertices(mesh: &gltf::Mesh) -> usize {
@@ -111,28 +118,38 @@ enum Format {
 
 fn determine_output_format(args: &Args, is_character: bool) -> Format {
     args.format.unwrap_or_else(|| {
-        let ext = args.output_file.as_ref()
+        let ext = args
+            .output_file
+            .as_ref()
             .and_then(|path| path.extension())
             .and_then(OsStr::to_str);
         match ext {
             Some("v3m") => Format::V3m,
             Some("v3c") => Format::V3c,
             Some("rfg") => Format::Rfg,
-            _ => if is_character { Format::V3c } else { Format::V3m },
+            _ => {
+                if is_character {
+                    Format::V3c
+                } else {
+                    Format::V3m
+                }
+            }
         }
     })
 }
 
 fn determine_output_file_name(args: &Args, output_format: Format) -> PathBuf {
-    args.output_file.as_ref()
-        .map_or_else(|| {
+    args.output_file.as_ref().map_or_else(
+        || {
             let ext = match output_format {
                 Format::V3m => "v3m",
                 Format::V3c => "v3c",
                 Format::Rfg => "rfg",
             };
             args.input_file.with_extension(ext)
-        }, |p| p.clone())
+        },
+        |p| p.clone(),
+    )
 }
 
 fn do_convert(args: Args) -> Result<(), Box<dyn Error>> {
@@ -157,7 +174,12 @@ fn do_convert(args: Args) -> Result<(), Box<dyn Error>> {
     if args.verbose >= 1 {
         println!("Exporting mesh: {}", output_file_name.display());
     }
-    let ctx = Context { buffers, is_character, args, output_dir };
+    let ctx = Context {
+        buffers,
+        is_character,
+        args,
+        output_dir,
+    };
     if output_format == Format::Rfg {
         let rfg = rfg_convert::convert_gltf_to_rfg(&document, &ctx)?;
         let file = File::create(output_file_name)?;
@@ -168,7 +190,7 @@ fn do_convert(args: Args) -> Result<(), Box<dyn Error>> {
         let file = File::create(output_file_name)?;
         let mut wrt = BufWriter::new(file);
         v3m.write(&mut wrt)?;
-    
+
         if let Some(skin) = skin_opt {
             for (i, anim) in document.animations().enumerate() {
                 char_anim::convert_animation_to_rfa(&anim, i, &skin, &ctx)?;

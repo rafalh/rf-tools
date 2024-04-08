@@ -1,24 +1,22 @@
 #![allow(unused_imports)]
 
-mod wave;
 mod adpcm;
+mod wave;
 
+use adpcm::Ps2AdpcmDecoder;
+use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use std::env;
 use std::fs::File;
-use std::io::{Read, Write, BufReader, BufWriter, Result};
-use byteorder::{ReadBytesExt, WriteBytesExt, LittleEndian};
-use adpcm::Ps2AdpcmDecoder;
+use std::io::{BufReader, BufWriter, Read, Result, Write};
 
-enum Operation
-{
+enum Operation {
     Info,
     Convert,
     Help,
     Version,
 }
 
-struct ParsedArgs
-{
+struct ParsedArgs {
     op: Operation,
     positional: Vec<String>,
     #[allow(dead_code)]
@@ -51,11 +49,11 @@ fn parse_args() -> ParsedArgs {
         }
     });
 
-    ParsedArgs { 
+    ParsedArgs {
         op,
         positional,
         verbose,
-        old
+        old,
     }
 }
 
@@ -76,10 +74,22 @@ struct VSoundHeader {
 impl VSoundHeader {
     fn read<R: Read>(rdr: &mut R, is_old_version: bool) -> Result<Self> {
         let sound_time_ms = rdr.read_i32::<LittleEndian>()?;
-        let keyoff_ms = if is_old_version { 0 } else { rdr.read_i32::<LittleEndian>()? };
-        let envelope = if is_old_version { 0 } else { rdr.read_i32::<LittleEndian>()? };
+        let keyoff_ms = if is_old_version {
+            0
+        } else {
+            rdr.read_i32::<LittleEndian>()?
+        };
+        let envelope = if is_old_version {
+            0
+        } else {
+            rdr.read_i32::<LittleEndian>()?
+        };
         let sample_length = rdr.read_i32::<LittleEndian>()?;
-        let loop_start = if is_old_version { 0 } else { rdr.read_i32::<LittleEndian>()? };
+        let loop_start = if is_old_version {
+            0
+        } else {
+            rdr.read_i32::<LittleEndian>()?
+        };
         let bitfield = rdr.read_u32::<LittleEndian>()?;
         let pitch = (bitfield & 0xFFFF) as i16;
         let ambient = (bitfield >> 16) & 1 != 0;
@@ -198,8 +208,12 @@ fn print_file_info(pathname: &str, is_old_version: bool) -> Result<()> {
 
 fn print_pcm_info(pcm_wf: &wave::PcmWaveFormat) {
     println!(
-        "Converting to WAV (PCM, {}, {} Hz)", 
-        if pcm_wf.wf.nChannels == 1 { "mono"} else { "stereo" },
+        "Converting to WAV (PCM, {}, {} Hz)",
+        if pcm_wf.wf.nChannels == 1 {
+            "mono"
+        } else {
+            "stereo"
+        },
         pcm_wf.wf.nSamplesPerSec
     );
 }
@@ -264,7 +278,8 @@ fn convert_vmusic(input_pathname: &str, output_pathname: &str) -> Result<()> {
         let mut block = [0u8; VMusicHeader::BLOCK_SIZE as usize];
         for _ in 0..hdr.block_count {
             let bytes_read = read_into_buffer(&mut rdr, &mut block)?;
-            const MAX_ADPCM_BLOCKS: usize = VMusicHeader::BLOCK_SIZE as usize / Ps2AdpcmDecoder::BLOCK_SIZE;
+            const MAX_ADPCM_BLOCKS: usize =
+                VMusicHeader::BLOCK_SIZE as usize / Ps2AdpcmDecoder::BLOCK_SIZE;
             let mut decoder = Ps2AdpcmDecoder::new();
             let mut pcm_buf = [0i16; Ps2AdpcmDecoder::SAMPLES_PER_BLOCK * MAX_ADPCM_BLOCKS];
             let num_samples = decoder.decode(&mut pcm_buf, &block[..bytes_read]);
@@ -297,7 +312,7 @@ fn main() -> Result<()> {
         Operation::Info => print_file_info(&args.positional[0], args.old)?,
         Operation::Convert => convert_file(&args.positional[0], &args.positional[1], args.old)?,
         Operation::Help => print_help(),
-        Operation::Version => print_version()
+        Operation::Version => print_version(),
     }
     Ok(())
 }

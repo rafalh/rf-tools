@@ -1,5 +1,5 @@
-use std::{convert::TryInto, io::Write};
 use byteorder::{ByteOrder, LittleEndian, WriteBytesExt};
+use std::{convert::TryInto, io::Write};
 
 pub(crate) trait WriteExt: Write {
     fn write_f32_slice_le(&mut self, slice: &[f32]) -> std::io::Result<()> {
@@ -22,11 +22,15 @@ pub(crate) trait WriteExt: Write {
         }
         Ok(())
     }
-    
+
     fn write_char_array(&mut self, string: &str, size: usize) -> std::io::Result<()> {
         let bytes = string.as_bytes();
         if bytes.len() >= size {
-            return Err(new_custom_error(format!("string value {} is too long (max {})", string, size - 1)));
+            return Err(new_custom_error(format!(
+                "string value {} is too long (max {})",
+                string,
+                size - 1
+            )));
         }
         self.write_all(bytes)?;
         let padding = vec![0_u8; size - bytes.len()];

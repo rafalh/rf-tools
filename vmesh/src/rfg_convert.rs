@@ -2,7 +2,14 @@ use std::collections::HashMap;
 
 use glam::{Quat, Vec3};
 
-use crate::{gltf_to_rf_face, gltf_to_rf_quat, gltf_to_rf_vec, io_utils::new_custom_error, material::get_material_base_color_texture_name, math_utils::{compute_triangle_plane, generate_uv}, rfg::{Brush, Face, FaceVertex, Group, Rfg, Solid}, BoxResult, Context};
+use crate::{
+    gltf_to_rf_face, gltf_to_rf_quat, gltf_to_rf_vec,
+    io_utils::new_custom_error,
+    material::get_material_base_color_texture_name,
+    math_utils::{compute_triangle_plane, generate_uv},
+    rfg::{Brush, Face, FaceVertex, Group, Rfg, Solid},
+    BoxResult, Context,
+};
 
 pub fn convert_gltf_to_rfg(doc: &gltf::Document, ctx: &Context) -> BoxResult<Rfg> {
     let mut next_uid = 1;
@@ -14,13 +21,21 @@ pub fn convert_gltf_to_rfg(doc: &gltf::Document, ctx: &Context) -> BoxResult<Rfg
         let mut brushes = Vec::new();
         brushes.push(create_brush(mesh, next_uid, ctx, &transform)?);
         next_uid += 1;
-        groups.push(Group { group_name, brushes });
+        groups.push(Group {
+            group_name,
+            brushes,
+        });
     }
     let rfg = Rfg { groups };
     Ok(rfg)
 }
 
-fn create_brush(mesh: gltf::Mesh, uid: i32, ctx: &Context, transform: &glam::Mat4) -> std::io::Result<Brush> {
+fn create_brush(
+    mesh: gltf::Mesh,
+    uid: i32,
+    ctx: &Context,
+    transform: &glam::Mat4,
+) -> std::io::Result<Brush> {
     let (scale, rotation, translation) = transform.to_scale_rotation_translation();
 
     let mut vertices = Vec::new();
@@ -29,19 +44,24 @@ fn create_brush(mesh: gltf::Mesh, uid: i32, ctx: &Context, transform: &glam::Mat
 
     for prim in mesh.primitives() {
         if prim.mode() != gltf::mesh::Mode::Triangles {
-            return Err(new_custom_error("only triangle list primitives are supported"));
+            return Err(new_custom_error(
+                "only triangle list primitives are supported",
+            ));
         }
 
         let texture_name = get_material_base_color_texture_name(&prim.material());
-        let texture_index = textures.iter().position(|t| t == &texture_name)
+        let texture_index = textures
+            .iter()
+            .position(|t| t == &texture_name)
             .unwrap_or_else(|| {
                 textures.push(texture_name);
                 textures.len() - 1
             });
 
         let reader = prim.reader(|buffer| ctx.get_buffer_data(buffer));
-    
-        let prim_v_index_to_brush_v_index: HashMap<usize, usize> = reader.read_positions()
+
+        let prim_v_index_to_brush_v_index: HashMap<usize, usize> = reader
+            .read_positions()
             .expect("mesh has no positions")
             .map(gltf_to_rf_vec)
             .map(|v| (Vec3::from_array(v) * scale).to_array())
@@ -58,10 +78,12 @@ fn create_brush(mesh: gltf::Mesh, uid: i32, ctx: &Context, transform: &glam::Mat
             })
             .collect();
 
-        let uvs_opt: Option<Vec<_>> = reader.read_tex_coords(0)
+        let uvs_opt: Option<Vec<_>> = reader
+            .read_tex_coords(0)
             .map(|iter| iter.into_f32().collect());
-    
-        let indices: Vec<u32> = reader.read_indices()
+
+        let indices: Vec<u32> = reader
+            .read_indices()
             .expect("mesh has no indices")
             .into_u32()
             .collect();
@@ -78,27 +100,33 @@ fn create_brush(mesh: gltf::Mesh, uid: i32, ctx: &Context, transform: &glam::Mat
                 Face {
                     plane,
                     texture: texture_index as i32,
-                    vertices: chunk.iter()
+                    vertices: chunk
+                        .iter()
                         .copied()
                         .map(|index| {
                             let brush_v_index = prim_v_index_to_brush_v_index[&(index as usize)];
                             let texture_coords = uvs_opt.as_ref().map_or_else(
                                 || generate_uv(&vertices[brush_v_index], &plane_normal),
-                                |uvs| uvs[index as usize]
+                                |uvs| uvs[index as usize],
                             );
-                            FaceVertex { 
+                            FaceVertex {
                                 index: brush_v_index as u32,
                                 texture_coords,
                             }
                         })
-                        .collect()
+                        .collect(),
                 }
             })
             .for_each(|f| faces.push(f));
     }
 
     if ctx.args.verbose >= 1 {
-        println!("Brush {}: {} vertices, {} faces", uid, vertices.len(), faces.len());
+        println!(
+            "Brush {}: {} vertices, {} faces",
+            uid,
+            vertices.len(),
+            faces.len()
+        );
     }
     let solid = Solid {
         textures,

@@ -1,10 +1,12 @@
-use std::env;
-use std::fs::File;
-use std::u32;
-use std::io::{Read, Write, Seek, SeekFrom, BufReader, BufRead, BufWriter, Error, ErrorKind, Result};
 use std::cmp;
 use std::convert::TryInto;
+use std::env;
+use std::fs::File;
+use std::io::{
+    BufRead, BufReader, BufWriter, Error, ErrorKind, Read, Result, Seek, SeekFrom, Write,
+};
 use std::path::Path;
+use std::u32;
 
 #[macro_use]
 extern crate log;
@@ -13,7 +15,7 @@ const VPP_BLOCK_SIZE: usize = 0x800;
 const VPP_VERSION: u32 = 1;
 const VPP_SIGNATURE: u32 = 0x51890ACE;
 
-trait ReadLe : Read {
+trait ReadLe: Read {
     fn read_u32_le(&mut self) -> Result<u32> {
         let mut temp = [0u8; 4];
         self.read_exact(&mut temp)?;
@@ -21,7 +23,7 @@ trait ReadLe : Read {
     }
 }
 
-trait WriteLe : Write {
+trait WriteLe: Write {
     fn write_u32_le(&mut self, val: u32) -> Result<()> {
         self.write_all(&val.to_le_bytes())
     }
@@ -46,15 +48,21 @@ impl VppHeader {
     fn read<R: Read>(rdr: &mut R) -> Result<VppHeader> {
         let signature = rdr.read_u32_le()?;
         if signature != VPP_SIGNATURE {
-            return Err(Error::new(ErrorKind::Other, format!("invalid file signature {}", signature)));
+            return Err(Error::new(
+                ErrorKind::Other,
+                format!("invalid file signature {}", signature),
+            ));
         }
         let version = rdr.read_u32_le()?;
         if version != VPP_VERSION {
-            return Err(Error::new(ErrorKind::Other, format!("unsupported version {}", version)));
+            return Err(Error::new(
+                ErrorKind::Other,
+                format!("unsupported version {}", version),
+            ));
         }
         let num_files = rdr.read_u32_le()?;
         let size = rdr.read_u32_le()?;
-        Ok(VppHeader{
+        Ok(VppHeader {
             signature,
             version,
             num_files,
@@ -72,7 +80,6 @@ impl VppHeader {
 }
 
 impl VppEntry {
-
     const NAME_MAX_LEN: usize = 60;
 
     fn read<R: Read>(rdr: &mut R) -> Result<VppEntry> {
@@ -80,7 +87,7 @@ impl VppEntry {
         rdr.read_exact(&mut name_buf)?;
         let size = rdr.read_u32_le()?;
         let name = name_buf.iter().cloned().take_while(|b| b != &0u8).collect();
-        Ok(VppEntry{ name, size })
+        Ok(VppEntry { name, size })
     }
 
     fn write<W: Write>(&self, wrt: &mut W) -> Result<()> {
@@ -232,7 +239,7 @@ fn extract_vpp(packfile_path: &str, output_dir: Option<&str>, verbose: bool) -> 
         let mut bytes_left = entry.size as usize;
         for _ in 0..num_blocks {
             file.read_exact(&mut block)?;
-            let bytes_to_write = cmp::min( VPP_BLOCK_SIZE, bytes_left);
+            let bytes_to_write = cmp::min(VPP_BLOCK_SIZE, bytes_left);
             output_file.write_all(&block[..bytes_to_write])?;
             bytes_left -= bytes_to_write;
         }
@@ -251,7 +258,6 @@ fn format_size(bytes: u32) -> String {
     }
     let mb = kb / 1024;
     format!("{} MB", mb)
-
 }
 
 fn list_vpp_content(packfile_path: &str) -> Result<()> {
@@ -280,8 +286,7 @@ fn version() {
     println!("VPP Tool {} created by Rafalh", env!("CARGO_PKG_VERSION"));
 }
 
-enum Mode
-{
+enum Mode {
     Create,
     Extract,
     List,
@@ -289,8 +294,7 @@ enum Mode
     Version,
 }
 
-struct ParsedArgs
-{
+struct ParsedArgs {
     mode: Mode,
     positional_args: Vec<String>,
     dep_info: bool,
@@ -316,9 +320,9 @@ fn parse_args() -> ParsedArgs {
         }
     }
 
-    ParsedArgs { 
-        mode, 
-        positional_args, 
+    ParsedArgs {
+        mode,
+        positional_args,
         dep_info,
         verbose,
     }
@@ -329,22 +333,28 @@ fn main() -> Result<()> {
     match args.mode {
         Mode::Create => {
             let vpp_path = args.positional_args.first().unwrap();
-            let file_list = process_file_list(args.positional_args.iter().skip(1).cloned().collect::<Vec<_>>())?;
+            let file_list = process_file_list(
+                args.positional_args
+                    .iter()
+                    .skip(1)
+                    .cloned()
+                    .collect::<Vec<_>>(),
+            )?;
             create_vpp(vpp_path, &file_list, args.verbose)?;
             if args.dep_info {
                 create_dep_file(vpp_path, &file_list)?;
             }
-        },
+        }
         Mode::List => {
             for vpp_path in &args.positional_args {
                 list_vpp_content(vpp_path)?;
             }
-        },
+        }
         Mode::Extract => {
             for vpp_path in &args.positional_args {
                 extract_vpp(vpp_path, None, args.verbose)?;
             }
-        },
+        }
         Mode::Help => help(),
         Mode::Version => version(),
     };

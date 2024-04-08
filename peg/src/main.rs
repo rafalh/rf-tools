@@ -2,12 +2,12 @@
 
 mod targa;
 
-use std::io::{Read, Write, Result, BufReader, BufWriter, Seek, SeekFrom};
-use std::env;
-use std::fs::File;
+use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use std::cmp;
 use std::convert::TryInto;
-use byteorder::{ReadBytesExt, WriteBytesExt, LittleEndian};
+use std::env;
+use std::fs::File;
+use std::io::{BufReader, BufWriter, Read, Result, Seek, SeekFrom, Write};
 
 enum PegBmType {
     Mpeg2_16 = 1,
@@ -95,7 +95,10 @@ impl PegFileEntry {
         let read_filename = |rdr: &mut R| -> Result<String> {
             let mut filename = [0u8; 48];
             rdr.read_exact(&mut filename)?;
-            let filename_len = filename.iter().position(|&c| c == b'\0').unwrap_or(filename.len());
+            let filename_len = filename
+                .iter()
+                .position(|&c| c == b'\0')
+                .unwrap_or(filename.len());
             Ok(String::from_utf8_lossy(&filename[..filename_len]).to_string())
         };
         Ok(Self {
@@ -145,7 +148,7 @@ fn print_peg_file_info(pathname: &str) -> Result<()> {
     let mut rdr = BufReader::new(File::open(pathname)?);
     let hdr = PegFileHeader::read(&mut rdr)?;
     hdr.check();
-    
+
     print_peg_file_header(&hdr);
     for i in 0..hdr.num_bitmaps {
         let entry = PegFileEntry::read(&mut rdr)?;
@@ -162,7 +165,14 @@ struct PalEntry {
     a: u8,
 }
 
-fn extract_peg_mipmap<R: Read>(rdr: &mut R, ent: &PegFileEntry, level: u8, frame: u8, pal: &[PalEntry; 256], output_dir: Option<&str>) -> Result<()> {
+fn extract_peg_mipmap<R: Read>(
+    rdr: &mut R,
+    ent: &PegFileEntry,
+    level: u8,
+    frame: u8,
+    pal: &[PalEntry; 256],
+    output_dir: Option<&str>,
+) -> Result<()> {
     let width = ent.width >> level;
     let height = ent.height >> level;
     let output_filename = format!(
@@ -172,11 +182,16 @@ fn extract_peg_mipmap<R: Read>(rdr: &mut R, ent: &PegFileEntry, level: u8, frame
         frame,
         level
     );
-    println!("Writing mip level {} ({}x{}) to {}.", level, width, height, output_filename);
+    println!(
+        "Writing mip level {} ({}x{}) to {}.",
+        level, width, height, output_filename
+    );
     let mut wrt = BufWriter::new(File::create(&output_filename)?);
     let (bpp, indexed) = if ent.keg_bm_type == PegBmType::Rgba5551 as u8 {
         (16, false)
-    } else if ent.keg_bm_type == PegBmType::Indexed8 as u8 || ent.keg_bm_type == PegBmType::Indexed4 as u8 {
+    } else if ent.keg_bm_type == PegBmType::Indexed8 as u8
+        || ent.keg_bm_type == PegBmType::Indexed4 as u8
+    {
         (32, true)
     } else if ent.keg_bm_type == PegBmType::Rgba8888 as u8 {
         (32, false)
@@ -229,12 +244,19 @@ fn extract_peg_mipmap<R: Read>(rdr: &mut R, ent: &PegFileEntry, level: u8, frame
     Ok(())
 }
 
-fn extract_mpeg_video<R: Read>(rdr: &mut R, e: &PegFileEntry, output_dir: Option<&str>) -> Result<()> {
+fn extract_mpeg_video<R: Read>(
+    rdr: &mut R,
+    e: &PegFileEntry,
+    output_dir: Option<&str>,
+) -> Result<()> {
     let total_size = rdr.read_u32::<LittleEndian>()?;
     let unk0 = rdr.read_u32::<LittleEndian>()?;
     let unk1 = rdr.read_u32::<LittleEndian>()?;
     let unk2 = rdr.read_u32::<LittleEndian>()?;
-    println!("MPEG2 video header: {:x} {:x} {} {}", total_size, unk0, unk1, unk2);
+    println!(
+        "MPEG2 video header: {:x} {:x} {} {}",
+        total_size, unk0, unk1, unk2
+    );
 
     let output_filename = format!("{}/{}.mpg", output_dir.unwrap_or("."), e.filename);
     let mut wrt = BufWriter::new(File::create(output_filename)?);
@@ -253,8 +275,11 @@ fn extract_mpeg_video<R: Read>(rdr: &mut R, e: &PegFileEntry, output_dir: Option
     Ok(())
 }
 
-fn extract_peg_bitmap<R: Read>(rdr: &mut R, e: &PegFileEntry, output_dir: Option<&str>) -> Result<()> {
-
+fn extract_peg_bitmap<R: Read>(
+    rdr: &mut R,
+    e: &PegFileEntry,
+    output_dir: Option<&str>,
+) -> Result<()> {
     if e.keg_bm_type == PegBmType::Mpeg2_16 as u8 || e.keg_bm_type == PegBmType::Mpeg2_32 as u8 {
         extract_mpeg_video(rdr, e, output_dir)?;
         return Ok(());
@@ -262,13 +287,19 @@ fn extract_peg_bitmap<R: Read>(rdr: &mut R, e: &PegFileEntry, output_dir: Option
 
     for frame in 0..e.num_frames {
         let mut pal = [PalEntry::default(); 256];
-        if e.keg_bm_type == PegBmType::Indexed8 as u8 || e.keg_bm_type == PegBmType::Indexed4 as u8 {
-            let num_pal_entries = if e.keg_bm_type == PegBmType::Indexed8 as u8 { 256 } else { 16 };
+        if e.keg_bm_type == PegBmType::Indexed8 as u8 || e.keg_bm_type == PegBmType::Indexed4 as u8
+        {
+            let num_pal_entries = if e.keg_bm_type == PegBmType::Indexed8 as u8 {
+                256
+            } else {
+                16
+            };
             for pal_ent in pal.iter_mut().take(num_pal_entries) {
                 *pal_ent = if e.keg_pal_type == PegPalType::Rgba5551 as u8 {
                     let w = rdr.read_u16::<LittleEndian>()?;
-                    PalEntry { // TODO: rounding or remove conversion
-                        r: (((w)      & 0x1f) * 255 / 31) as u8,
+                    PalEntry {
+                        // TODO: rounding or remove conversion
+                        r: (((w) & 0x1f) * 255 / 31) as u8,
                         g: (((w >> 5) & 0x1f) * 255 / 31) as u8,
                         b: (((w >> 10) & 0x1f) * 255 / 31) as u8,
                         a: (((w >> 15) & 0x1) * 255) as u8,
@@ -352,7 +383,7 @@ fn parse_args() -> ParsedArgs {
         }
     });
 
-    ParsedArgs { 
+    ParsedArgs {
         op,
         positional,
         verbose,
@@ -379,14 +410,14 @@ fn main() -> Result<()> {
             for pathname in &args.positional {
                 print_peg_file_info(pathname)?;
             }
-        },
+        }
         Operation::Extract => {
             for pathname in &args.positional {
                 extract_peg_file(pathname, args.output_dir.as_deref())?;
             }
         }
         Operation::Help => print_help(),
-        Operation::Version => print_version()
+        Operation::Version => print_version(),
     }
     Ok(())
 }

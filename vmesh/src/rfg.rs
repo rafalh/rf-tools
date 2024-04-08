@@ -1,7 +1,7 @@
-use std::io::{Write, Result};
-use std::convert::TryInto;
-use byteorder::{LittleEndian, WriteBytesExt};
 use crate::io_utils::WriteExt;
+use byteorder::{LittleEndian, WriteBytesExt};
+use std::convert::TryInto;
+use std::io::{Result, Write};
 
 pub struct Rfg {
     pub groups: Vec<Group>,
@@ -80,7 +80,9 @@ impl Brush {
 
 fn reorder_matrix_rows(mat: [f32; 9]) -> [f32; 9] {
     // rfl/rfg uses non-standard row order: forward, right, up
-    [mat[6], mat[7], mat[8], mat[0], mat[1], mat[2], mat[3], mat[4], mat[5]] 
+    [
+        mat[6], mat[7], mat[8], mat[0], mat[1], mat[2], mat[3], mat[4], mat[5],
+    ]
 }
 
 pub struct Solid {

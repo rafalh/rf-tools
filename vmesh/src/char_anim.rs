@@ -1,15 +1,15 @@
+use crate::io_utils::new_custom_error;
+use crate::v3mc_convert::get_node_extras;
+use crate::{gltf_to_rf_quat, gltf_to_rf_vec, rfa, v3mc, Context};
+use gltf::animation::util::{ReadInputs, ReadOutputs};
+use gltf::animation::Interpolation;
+use serde_derive::Deserialize;
+use serde_json::Value;
+use std::collections::BTreeMap;
+use std::f32;
 use std::fs::File;
 use std::io::BufWriter;
 use std::vec::Vec;
-use std::f32;
-use std::collections::BTreeMap;
-use gltf::animation::Interpolation;
-use gltf::animation::util::{ReadInputs, ReadOutputs};
-use serde_json::Value;
-use serde_derive::Deserialize;
-use crate::{rfa, v3mc, gltf_to_rf_quat, gltf_to_rf_vec, Context};
-use crate::v3mc_convert::get_node_extras;
-use crate::io_utils::new_custom_error;
 
 #[derive(Deserialize, Debug, Default)]
 struct JointExtras {
@@ -31,9 +31,7 @@ impl JointExtras {
     }
 
     fn get_float(&self, key: &str) -> Option<f32> {
-        self.map.get(key)
-            .and_then(|v| v.as_f64())
-            .map(|v| v as f32)
+        self.map.get(key).and_then(|v| v.as_f64()).map(|v| v as f32)
     }
 }
 
@@ -45,34 +43,40 @@ fn make_short_quat(quat: [f32; 4]) -> [i16; 4] {
     quat.map(|x| (x * 16383.0_f32) as i16)
 }
 
-fn get_node_anim_channels<'a>(n: &gltf::Node, anim: &'a gltf::Animation) -> impl Iterator<Item = gltf::animation::Channel<'a>> + 'a {
+fn get_node_anim_channels<'a>(
+    n: &gltf::Node,
+    anim: &'a gltf::Animation,
+) -> impl Iterator<Item = gltf::animation::Channel<'a>> + 'a {
     let node_index = n.index();
     anim.channels()
         .filter(move |c| c.target().node().index() == node_index)
 }
 
 fn get_node_anim_data<'a>(
-    n: &gltf::Node, anim: &'a gltf::Animation, ctx: &'a Context
-) -> impl Iterator<Item = (ReadInputs<'a>, ReadOutputs<'a>, Interpolation)> + 'a
-{
-    get_node_anim_channels(n, anim)
-        .filter_map(move |channel| {
-            let reader = channel.reader(|buffer| ctx.get_buffer_data(buffer));
-            let interpolation = channel.sampler().interpolation();
-            reader.read_inputs()
-                .and_then(|inputs| 
-                    reader.read_outputs().map(|outputs| (inputs, outputs, interpolation))
-                )
+    n: &gltf::Node,
+    anim: &'a gltf::Animation,
+    ctx: &'a Context,
+) -> impl Iterator<Item = (ReadInputs<'a>, ReadOutputs<'a>, Interpolation)> + 'a {
+    get_node_anim_channels(n, anim).filter_map(move |channel| {
+        let reader = channel.reader(|buffer| ctx.get_buffer_data(buffer));
+        let interpolation = channel.sampler().interpolation();
+        reader.read_inputs().and_then(|inputs| {
+            reader
+                .read_outputs()
+                .map(|outputs| (inputs, outputs, interpolation))
         })
+    })
 }
 
-fn convert_rotation_keys(n: &gltf::Node, anim: &gltf::Animation, ctx: &Context) -> Vec<rfa::RotationKey> {
+fn convert_rotation_keys(
+    n: &gltf::Node,
+    anim: &gltf::Animation,
+    ctx: &Context,
+) -> Vec<rfa::RotationKey> {
     get_node_anim_data(n, anim, ctx)
-        .filter_map(|(inputs, outputs, interpolation)| {
-            match outputs {
-                ReadOutputs::Rotations(rotations) => Some((inputs, rotations, interpolation)),
-                _ => None,
-            }
+        .filter_map(|(inputs, outputs, interpolation)| match outputs {
+            ReadOutputs::Rotations(rotations) => Some((inputs, rotations, interpolation)),
+            _ => None,
         })
         .map(|(inputs, rotations, interpolation)| {
             let rotations_quads = rotations
@@ -86,9 +90,7 @@ fn convert_rotation_keys(n: &gltf::Node, anim: &gltf::Animation, ctx: &Context) 
                     .map(|s| (s[0], s[1], s[2]))
                     .collect::<Vec<_>>()
             } else {
-                rotations_quads
-                    .map(|r| (r, r, r))
-                    .collect::<Vec<_>>()
+                rotations_quads.map(|r| (r, r, r)).collect::<Vec<_>>()
             };
             inputs
                 .map(gltf_time_to_rfa_time)
@@ -105,13 +107,15 @@ fn convert_rotation_keys(n: &gltf::Node, anim: &gltf::Animation, ctx: &Context) 
         .unwrap_or_default()
 }
 
-fn convert_translation_keys(n: &gltf::Node, anim: &gltf::Animation, ctx: &Context) -> Vec<rfa::TranslationKey> {
+fn convert_translation_keys(
+    n: &gltf::Node,
+    anim: &gltf::Animation,
+    ctx: &Context,
+) -> Vec<rfa::TranslationKey> {
     get_node_anim_data(n, anim, ctx)
-        .filter_map(|(inputs, outputs, interpolation)| {
-            match outputs {
-                ReadOutputs::Translations(translations) => Some((inputs, translations, interpolation)),
-                _ => None,
-            }
+        .filter_map(|(inputs, outputs, interpolation)| match outputs {
+            ReadOutputs::Translations(translations) => Some((inputs, translations, interpolation)),
+            _ => None,
         })
         .map(|(inputs, translations, interpolation)| {
             let rf_translations = translations.map(gltf_to_rf_vec);
@@ -122,9 +126,7 @@ fn convert_translation_keys(n: &gltf::Node, anim: &gltf::Animation, ctx: &Contex
                     .map(|s| (s[0], s[1], s[2]))
                     .collect::<Vec<_>>()
             } else {
-                rf_translations
-                    .map(|t| (t, t, t))
-                    .collect::<Vec<_>>()
+                rf_translations.map(|t| (t, t, t)).collect::<Vec<_>>()
             };
             inputs
                 .map(gltf_time_to_rfa_time)
@@ -136,8 +138,7 @@ fn convert_translation_keys(n: &gltf::Node, anim: &gltf::Animation, ctx: &Contex
                         in_tangent: translation,
                         translation,
                         out_tangent: translation,
-                    }
-                )
+                    })
                 .collect::<Vec<_>>()
         })
         .next()
@@ -145,11 +146,17 @@ fn convert_translation_keys(n: &gltf::Node, anim: &gltf::Animation, ctx: &Contex
 }
 
 fn determine_anim_time_range(bones: &[rfa::Bone]) -> (i32, i32) {
-    bones.iter()
-        .flat_map(|b| b.rotation_keys.iter()
-            .map(|k| k.time)
-            .chain(b.translation_keys.iter().map(|k| k.time)))
-        .fold((0_i32, 0_i32), |(min, max), time| (min.min(time), max.max(time)))
+    bones
+        .iter()
+        .flat_map(|b| {
+            b.rotation_keys
+                .iter()
+                .map(|k| k.time)
+                .chain(b.translation_keys.iter().map(|k| k.time))
+        })
+        .fold((0_i32, 0_i32), |(min, max), time| {
+            (min.min(time), max.max(time))
+        })
 }
 
 fn check_for_scale_channels(n: &gltf::Node, anim: &gltf::Animation, ctx: &Context) {
@@ -173,15 +180,25 @@ fn is_death_anim(anim: &gltf::Animation) -> bool {
     anim.name().unwrap_or_default().contains("death")
 }
 
-fn are_all_anim_keys_equal(rotation_keys: &[rfa::RotationKey], translation_keys: &[rfa::TranslationKey]) -> bool {
+fn are_all_anim_keys_equal(
+    rotation_keys: &[rfa::RotationKey],
+    translation_keys: &[rfa::TranslationKey],
+) -> bool {
     let initial_rotation = rotation_keys.iter().next().map(|rk| rk.rotation);
     let initial_translation = translation_keys.iter().next().map(|tk| tk.translation);
-    let rotation_keys_equal = rotation_keys.iter().all(|rk| Some(rk.rotation) == initial_rotation);
-    let translation_keys_equal = translation_keys.iter().all(|tk| Some(tk.translation) == initial_translation);
+    let rotation_keys_equal = rotation_keys
+        .iter()
+        .all(|rk| Some(rk.rotation) == initial_rotation);
+    let translation_keys_equal = translation_keys
+        .iter()
+        .all(|tk| Some(tk.translation) == initial_translation);
     rotation_keys_equal && translation_keys_equal
 }
 
-fn determine_anim_weight(rotation_keys: &[rfa::RotationKey], translation_keys: &[rfa::TranslationKey]) -> f32 {
+fn determine_anim_weight(
+    rotation_keys: &[rfa::RotationKey],
+    translation_keys: &[rfa::TranslationKey],
+) -> f32 {
     if are_all_anim_keys_equal(rotation_keys, translation_keys) {
         2.0
     } else {
@@ -194,7 +211,8 @@ fn convert_bone_anim(node: &gltf::Node, anim: &gltf::Animation, ctx: &Context) -
     let translation_keys = convert_translation_keys(node, anim, ctx);
     check_for_scale_channels(node, anim, ctx);
     let extras = get_node_extras::<JointExtras>(node);
-    let weight = extras.get_anim_weight(anim.name().unwrap_or_default())
+    let weight = extras
+        .get_anim_weight(anim.name().unwrap_or_default())
         .or(ctx.args.anim_weight)
         .unwrap_or_else(|| determine_anim_weight(&rotation_keys, &translation_keys));
     rfa::Bone {
@@ -205,31 +223,54 @@ fn convert_bone_anim(node: &gltf::Node, anim: &gltf::Animation, ctx: &Context) -
 }
 
 fn get_default_ramp_in_time(anim: &gltf::Animation) -> i32 {
-    if is_death_anim(anim) { 800 } else { 480 } // 0.1(6) s, 0.1 s
+    if is_death_anim(anim) {
+        800
+    } else {
+        480
+    } // 0.1(6) s, 0.1 s
 }
 
 fn get_default_ramp_out_time(anim: &gltf::Animation) -> i32 {
-    if is_death_anim(anim) { 0 } else { 480 } // 0.0 s, 0.1 s
+    if is_death_anim(anim) {
+        0
+    } else {
+        480
+    } // 0.0 s, 0.1 s
 }
 
-fn determine_ramp_in_time(anim: &gltf::Animation, root_joint_extras: &JointExtras, duration: i32, ctx: &Context) -> i32 {
+fn determine_ramp_in_time(
+    anim: &gltf::Animation,
+    root_joint_extras: &JointExtras,
+    duration: i32,
+    ctx: &Context,
+) -> i32 {
     let anim_name = anim.name().unwrap_or_default();
-    root_joint_extras.get_ramp_in_time(anim_name)
+    root_joint_extras
+        .get_ramp_in_time(anim_name)
         .or(ctx.args.ramp_in_time)
         .map(gltf_time_to_rfa_time)
         .unwrap_or_else(|| get_default_ramp_in_time(anim).min(duration / 2))
 }
 
-fn determine_ramp_out_time(anim: &gltf::Animation, root_joint_extras: &JointExtras, duration: i32, ctx: &Context) -> i32 {
+fn determine_ramp_out_time(
+    anim: &gltf::Animation,
+    root_joint_extras: &JointExtras,
+    duration: i32,
+    ctx: &Context,
+) -> i32 {
     let anim_name = anim.name().unwrap_or_default();
-    root_joint_extras.get_ramp_out_time(anim_name)
+    root_joint_extras
+        .get_ramp_out_time(anim_name)
         .or(ctx.args.ramp_out_time)
         .map(gltf_time_to_rfa_time)
         .unwrap_or_else(|| get_default_ramp_out_time(anim).min(duration / 2))
 }
 
 fn is_root_joint(node: &gltf::Node) -> bool {
-    node.name().unwrap_or_default().to_lowercase().ends_with("root")
+    node.name()
+        .unwrap_or_default()
+        .to_lowercase()
+        .ends_with("root")
 }
 
 fn find_root_joint<'a>(skin: &'a gltf::Skin) -> Option<gltf::Node<'a>> {
@@ -268,14 +309,18 @@ fn make_rfa(anim: &gltf::Animation, skin: &gltf::Skin, ctx: &Context) -> rfa::Fi
         total_translation: [0.0_f32; 3],
         ..rfa::FileHeader::default()
     };
-    rfa::File {
-        header,
-        bones,
-    }
+    rfa::File { header, bones }
 }
 
-pub(crate) fn convert_animation_to_rfa(anim: &gltf::Animation, index: usize, skin: &gltf::Skin, ctx: &Context) -> std::io::Result<()> {
-    let name = anim.name().map_or_else(|| format!("anim_{}", index), str::to_owned);
+pub(crate) fn convert_animation_to_rfa(
+    anim: &gltf::Animation,
+    index: usize,
+    skin: &gltf::Skin,
+    ctx: &Context,
+) -> std::io::Result<()> {
+    let name = anim
+        .name()
+        .map_or_else(|| format!("anim_{}", index), str::to_owned);
     let file_name = ctx.output_dir.join(format!("{}.rfa", name));
     if ctx.args.verbose >= 1 {
         println!("Exporting animation: {} -> {}", name, file_name.display());
@@ -287,7 +332,8 @@ pub(crate) fn convert_animation_to_rfa(anim: &gltf::Animation, index: usize, ski
 }
 
 fn get_joint_index(node: &gltf::Node, skin: &gltf::Skin) -> usize {
-    skin.joints().enumerate()
+    skin.joints()
+        .enumerate()
         .filter(|(_i, n)| node.index() == n.index())
         .map(|(i, _n)| i)
         .next()
@@ -295,20 +341,37 @@ fn get_joint_index(node: &gltf::Node, skin: &gltf::Skin) -> usize {
 }
 
 fn get_joint_parent<'a>(node: &gltf::Node, skin: &gltf::Skin<'a>) -> Option<gltf::Node<'a>> {
-    skin.joints().find(|n| n.children().any(|c| c.index() == node.index()))
+    skin.joints()
+        .find(|n| n.children().any(|c| c.index() == node.index()))
 }
 
-fn convert_bone(n: &gltf::Node, inverse_bind_matrix: &[[f32; 4]; 4], index: usize, skin: &gltf::Skin) -> v3mc::Bone {
-    let name = n.name().map_or_else(|| format!("bone_{}", index), str::to_owned);
+fn convert_bone(
+    n: &gltf::Node,
+    inverse_bind_matrix: &[[f32; 4]; 4],
+    index: usize,
+    skin: &gltf::Skin,
+) -> v3mc::Bone {
+    let name = n
+        .name()
+        .map_or_else(|| format!("bone_{}", index), str::to_owned);
     let parent_node_opt = get_joint_parent(n, skin);
-    let parent_index = parent_node_opt
-        .map_or(-1, |pn| get_joint_index(&pn, skin) as i32);
+    let parent_index = parent_node_opt.map_or(-1, |pn| get_joint_index(&pn, skin) as i32);
     let inv_transform = glam::Mat4::from_cols_array_2d(inverse_bind_matrix);
-    let (gltf_scale, gltf_rotation, gltf_translation) = inv_transform.to_scale_rotation_translation();
-    assert!((gltf_scale - glam::Vec3::ONE).max_element() < 0.01_f32, "scale is not supported: {}", gltf_scale);
+    let (gltf_scale, gltf_rotation, gltf_translation) =
+        inv_transform.to_scale_rotation_translation();
+    assert!(
+        (gltf_scale - glam::Vec3::ONE).max_element() < 0.01_f32,
+        "scale is not supported: {}",
+        gltf_scale
+    );
     let base_rotation = gltf_to_rf_quat(gltf_rotation.into());
     let base_translation = gltf_to_rf_vec(gltf_translation.into());
-    v3mc::Bone { name, base_rotation, base_translation, parent_index }
+    v3mc::Bone {
+        name,
+        base_rotation,
+        base_translation,
+        parent_index,
+    }
 }
 
 pub(crate) fn convert_bones(skin: &gltf::Skin, ctx: &Context) -> std::io::Result<Vec<v3mc::Bone>> {
@@ -317,18 +380,26 @@ pub(crate) fn convert_bones(skin: &gltf::Skin, ctx: &Context) -> std::io::Result
         println!("Bones (joints): {}/{}", num_joints, v3mc::MAX_BONES);
     }
     if num_joints > v3mc::MAX_BONES {
-        let err_msg = format!("too many bones: found {} but only {} are supported", num_joints, v3mc::MAX_BONES);
+        let err_msg = format!(
+            "too many bones: found {} but only {} are supported",
+            num_joints,
+            v3mc::MAX_BONES
+        );
         return Err(new_custom_error(err_msg));
     }
 
-    let inverse_bind_matrices: Vec<_> = skin.reader(|buffer| ctx.get_buffer_data(buffer))
+    let inverse_bind_matrices: Vec<_> = skin
+        .reader(|buffer| ctx.get_buffer_data(buffer))
         .read_inverse_bind_matrices()
         .expect("expected inverse bind matrices")
         .collect();
 
     if inverse_bind_matrices.len() != num_joints {
-        let err_msg = format!("invalid number of inverse bind matrices: expected {}, got {}",
-            num_joints, inverse_bind_matrices.len());
+        let err_msg = format!(
+            "invalid number of inverse bind matrices: expected {}, got {}",
+            num_joints,
+            inverse_bind_matrices.len()
+        );
         return Err(new_custom_error(err_msg));
     }
 
@@ -344,7 +415,9 @@ fn is_joint(node: &gltf::Node, skin: &gltf::Skin) -> bool {
     skin.joints().any(|joint| node.index() == joint.index())
 }
 
-pub(crate) fn get_nodes_parented_to_bones<'a>(skin: &'a gltf::Skin) -> impl Iterator<Item = (gltf::Node<'a>, i32)> {
+pub(crate) fn get_nodes_parented_to_bones<'a>(
+    skin: &'a gltf::Skin,
+) -> impl Iterator<Item = (gltf::Node<'a>, i32)> {
     skin.joints()
         .flat_map(move |joint| {
             let joint_index = get_joint_index(&joint, skin) as i32;

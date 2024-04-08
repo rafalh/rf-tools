@@ -1,7 +1,7 @@
+use crate::v3mc;
 use std::convert::TryInto;
 use std::f32;
 use std::path::Path;
-use crate::v3mc;
 
 pub(crate) fn compute_render_mode_for_material(material: &gltf::material::Material) -> u32 {
     // for example 0x400C41 (sofa1.v3m):
@@ -43,7 +43,13 @@ pub(crate) fn compute_render_mode_for_material(material: &gltf::material::Materi
 }
 
 fn change_texture_ext_to_tga(name: &str) -> String {
-    String::from(Path::new(name).with_extension("tga").file_name().unwrap().to_string_lossy())
+    String::from(
+        Path::new(name)
+            .with_extension("tga")
+            .file_name()
+            .unwrap()
+            .to_string_lossy(),
+    )
 }
 
 pub(crate) fn get_material_base_color_texture_name(material: &gltf::material::Material) -> String {
@@ -70,18 +76,22 @@ fn get_material_self_illumination(mat: &gltf::Material) -> f32 {
 pub(crate) fn convert_material(mat: &gltf::Material) -> v3mc::Material {
     let tex_name = get_material_base_color_texture_name(mat);
     let self_illumination = get_material_self_illumination(mat);
-    let specular_level = mat.pbr_specular_glossiness()
-        .map_or_else(
-            || mat.pbr_metallic_roughness().metallic_factor(),
-            |spec_glos| spec_glos.specular_factor().iter().copied().fold(0_f32, f32::max),
-        );
-    let glossiness = mat.pbr_specular_glossiness()
-        .map_or_else(
-            || 1.0 - mat.pbr_metallic_roughness().roughness_factor(), 
-            |spec_glos| spec_glos.glossiness_factor(),
-        );
+    let specular_level = mat.pbr_specular_glossiness().map_or_else(
+        || mat.pbr_metallic_roughness().metallic_factor(),
+        |spec_glos| {
+            spec_glos
+                .specular_factor()
+                .iter()
+                .copied()
+                .fold(0_f32, f32::max)
+        },
+    );
+    let glossiness = mat.pbr_specular_glossiness().map_or_else(
+        || 1.0 - mat.pbr_metallic_roughness().roughness_factor(),
+        |spec_glos| spec_glos.glossiness_factor(),
+    );
 
-    v3mc::Material{
+    v3mc::Material {
         tex_name,
         self_illumination,
         specular_level,
@@ -91,13 +101,17 @@ pub(crate) fn convert_material(mat: &gltf::Material) -> v3mc::Material {
     }
 }
 
-pub(crate) fn create_mesh_material_ref(material: &gltf::Material, lod_mesh_materials: &[gltf::Material]) -> v3mc::MeshTextureRef {
-    let material_index = lod_mesh_materials.iter()
+pub(crate) fn create_mesh_material_ref(
+    material: &gltf::Material,
+    lod_mesh_materials: &[gltf::Material],
+) -> v3mc::MeshTextureRef {
+    let material_index = lod_mesh_materials
+        .iter()
         .position(|m| m.index() == material.index())
         .unwrap()
         .try_into()
         .unwrap();
-    v3mc::MeshTextureRef{
+    v3mc::MeshTextureRef {
         material_index,
         tex_name: get_material_base_color_texture_name(material),
     }
