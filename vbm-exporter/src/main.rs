@@ -130,9 +130,9 @@ fn write_tga_frame(
             }
             VbmColorFormat::_565 => {
                 let output_pixel = [
-                    (u32::from(input_pixel & 0xF) * 255 / 0x1F) as u8, // B
-                    (u32::from((input_pixel >> 5) & 0xF) * 255 / 0x3F) as u8, // G
-                    (u32::from((input_pixel >> 11) & 0xF) * 255 / 0x1F) as u8, // R
+                    (u32::from(input_pixel & 0x1F) * 255 / 0x1F) as u8, // B
+                    (u32::from((input_pixel >> 5) & 0x3F) * 255 / 0x3F) as u8, // G
+                    (u32::from((input_pixel >> 11) & 0x1F) * 255 / 0x1F) as u8, // R
                 ];
                 writer.write_all(&output_pixel)?;
             }
