@@ -27,7 +27,7 @@ impl Ps2AdpcmDecoder {
     }
 
     pub fn decode(&mut self, pcm_buf: &mut [i16], adpcm_data: &[u8]) -> usize {
-        if adpcm_data.len() % Self::BLOCK_SIZE != 0 {
+        if !adpcm_data.len().is_multiple_of(Self::BLOCK_SIZE) {
             panic!("Invalid ADPCM data size");
         }
         let num_blocks = adpcm_data.len() / Self::BLOCK_SIZE;

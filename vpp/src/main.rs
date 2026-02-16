@@ -2,11 +2,8 @@ use std::cmp;
 use std::convert::TryInto;
 use std::env;
 use std::fs::File;
-use std::io::{
-    BufRead, BufReader, BufWriter, Error, ErrorKind, Read, Result, Seek, SeekFrom, Write,
-};
+use std::io::{BufRead, BufReader, BufWriter, Error, Read, Result, Seek, SeekFrom, Write};
 use std::path::Path;
-use std::u32;
 
 #[macro_use]
 extern crate log;
@@ -48,17 +45,14 @@ impl VppHeader {
     fn read<R: Read>(rdr: &mut R) -> Result<VppHeader> {
         let signature = rdr.read_u32_le()?;
         if signature != VPP_SIGNATURE {
-            return Err(Error::new(
-                ErrorKind::Other,
-                format!("invalid file signature {}", signature),
-            ));
+            return Err(Error::other(format!(
+                "invalid file signature {}",
+                signature
+            )));
         }
         let version = rdr.read_u32_le()?;
         if version != VPP_VERSION {
-            return Err(Error::new(
-                ErrorKind::Other,
-                format!("unsupported version {}", version),
-            ));
+            return Err(Error::other(format!("unsupported version {}", version)));
         }
         let num_files = rdr.read_u32_le()?;
         let size = rdr.read_u32_le()?;
@@ -227,7 +221,7 @@ fn extract_vpp(packfile_path: &str, output_dir: Option<&str>, verbose: bool) -> 
 
     debug!("Reading data");
     for entry in entries {
-        let num_blocks = (entry.size as usize + VPP_BLOCK_SIZE - 1) / VPP_BLOCK_SIZE;
+        let num_blocks = (entry.size as usize).div_ceil(VPP_BLOCK_SIZE);
         let name_str = String::from_utf8_lossy(&entry.name);
         let output_path = output_dir
             .map(|dir| dir.to_owned() + "/" + &name_str)

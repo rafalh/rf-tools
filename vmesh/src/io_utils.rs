@@ -48,5 +48,5 @@ pub(crate) trait WriteExt: Write {
 impl<T: Write> WriteExt for T {}
 
 pub(crate) fn new_custom_error<S: Into<String>>(msg: S) -> std::io::Error {
-    std::io::Error::new(std::io::ErrorKind::Other, msg.into())
+    std::io::Error::other(msg.into())
 }

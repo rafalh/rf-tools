@@ -154,7 +154,7 @@ fn create_mesh_chunk_data(
         .collect();
     // Sanity checks
     assert!(
-        indices.len() % 3 == 0,
+        indices.len().is_multiple_of(3),
         "number of indices is not a multiple of three: {}",
         indices.len()
     );
@@ -257,7 +257,7 @@ fn create_mesh_chunk(
     let index_count = prim.indices().unwrap().count();
     let index_limit = 10000 - 768;
     assert!(
-        index_count % 3 == 0,
+        index_count.is_multiple_of(3),
         "number of indices is not a multiple of three: {}",
         index_count
     );
