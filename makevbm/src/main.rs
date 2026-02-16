@@ -130,9 +130,13 @@ fn main() {
         );
         println!();
         println!("Framerate is only important for animated VBMs (those with more than one frame).");
-        println!("Input file name is going to be suffixed with a zero-based frame number. For example when invoked:");
+        println!(
+            "Input file name is going to be suffixed with a zero-based frame number. For example when invoked:"
+        );
         println!("makevbm 565 10 miner.png");
-        println!("The tool will attempt to read frames from miner-0000.png, miner-0001.png, miner-0002.png, ...");
+        println!(
+            "The tool will attempt to read frames from miner-0000.png, miner-0001.png, miner-0002.png, ..."
+        );
         println!("Number of frames is determined automatically from the file system.");
 
         std::process::exit(1);

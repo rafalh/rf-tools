@@ -64,8 +64,10 @@ pub(crate) fn get_material_base_color_texture_name(material: &gltf::material::Ma
             return change_texture_ext_to_tga(uri);
         }
     }
-    eprintln!("Cannot obtain texture name for material {} (materials without base color texture are not supported)",
-        material.index().unwrap_or(0));
+    eprintln!(
+        "Cannot obtain texture name for material {} (materials without base color texture are not supported)",
+        material.index().unwrap_or(0)
+    );
     DEFAULT_TEXTURE.into()
 }
 

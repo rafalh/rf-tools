@@ -1,8 +1,8 @@
 use crate::io_utils::new_custom_error;
 use crate::v3mc_convert::get_node_extras;
-use crate::{gltf_to_rf_quat, gltf_to_rf_vec, rfa, v3mc, Context};
-use gltf::animation::util::{ReadInputs, ReadOutputs};
+use crate::{Context, gltf_to_rf_quat, gltf_to_rf_vec, rfa, v3mc};
 use gltf::animation::Interpolation;
+use gltf::animation::util::{ReadInputs, ReadOutputs};
 use serde_derive::Deserialize;
 use serde_json::Value;
 use std::collections::BTreeMap;
@@ -162,16 +162,16 @@ fn determine_anim_time_range(bones: &[rfa::Bone]) -> (i32, i32) {
 fn check_for_scale_channels(n: &gltf::Node, anim: &gltf::Animation, ctx: &Context) {
     for channel in get_node_anim_channels(n, anim) {
         let reader = channel.reader(|buffer| ctx.get_buffer_data(buffer));
-        if let Some(ReadOutputs::Scales(scales)) = reader.read_outputs() {
-            if scales.flatten().any(|s| (s - 1.0_f32).abs() > 0.01_f32) {
-                eprintln!(
-                    "Warning! Animation #{} '{}' is using unsupported scale channel on node #{} '{}'!",
-                    anim.index(),
-                    anim.name().unwrap_or_default(),
-                    n.index(),
-                    n.name().unwrap_or_default(),
-                );
-            }
+        if let Some(ReadOutputs::Scales(scales)) = reader.read_outputs()
+            && scales.flatten().any(|s| (s - 1.0_f32).abs() > 0.01_f32)
+        {
+            eprintln!(
+                "Warning! Animation #{} '{}' is using unsupported scale channel on node #{} '{}'!",
+                anim.index(),
+                anim.name().unwrap_or_default(),
+                n.index(),
+                n.name().unwrap_or_default(),
+            );
         }
     }
 }
@@ -223,19 +223,11 @@ fn convert_bone_anim(node: &gltf::Node, anim: &gltf::Animation, ctx: &Context) -
 }
 
 fn get_default_ramp_in_time(anim: &gltf::Animation) -> i32 {
-    if is_death_anim(anim) {
-        800
-    } else {
-        480
-    } // 0.1(6) s, 0.1 s
+    if is_death_anim(anim) { 800 } else { 480 } // 0.1(6) s, 0.1 s
 }
 
 fn get_default_ramp_out_time(anim: &gltf::Animation) -> i32 {
-    if is_death_anim(anim) {
-        0
-    } else {
-        480
-    } // 0.0 s, 0.1 s
+    if is_death_anim(anim) { 0 } else { 480 } // 0.0 s, 0.1 s
 }
 
 fn determine_ramp_in_time(

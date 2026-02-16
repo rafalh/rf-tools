@@ -1,3 +1,4 @@
+use crate::Context;
 use crate::char_anim;
 use crate::count_mesh_vertices;
 use crate::extract_translation_from_matrix;
@@ -12,10 +13,9 @@ use crate::io_utils::new_custom_error;
 use crate::material;
 use crate::material::{convert_material, create_mesh_material_ref};
 use crate::math_utils::{
-    compute_triangle_plane, generate_uv, get_vector_len, transform_normal, transform_point, Matrix3,
+    Matrix3, compute_triangle_plane, generate_uv, get_vector_len, transform_normal, transform_point,
 };
 use crate::v3mc;
-use crate::Context;
 use serde_derive::Deserialize;
 use std::convert::TryInto;
 use std::env;

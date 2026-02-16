@@ -3,12 +3,11 @@ use std::collections::HashMap;
 use glam::{Quat, Vec3};
 
 use crate::{
-    gltf_to_rf_face, gltf_to_rf_quat, gltf_to_rf_vec,
+    BoxResult, Context, gltf_to_rf_face, gltf_to_rf_quat, gltf_to_rf_vec,
     io_utils::new_custom_error,
     material::get_material_base_color_texture_name,
     math_utils::{compute_triangle_plane, generate_uv},
     rfg::{Brush, Face, FaceVertex, Group, Rfg, Solid},
-    BoxResult, Context,
 };
 
 pub fn convert_gltf_to_rfg(doc: &gltf::Document, ctx: &Context) -> BoxResult<Rfg> {
