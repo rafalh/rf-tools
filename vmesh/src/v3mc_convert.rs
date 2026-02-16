@@ -443,10 +443,10 @@ fn convert_lod_meshes(
     ctx: &Context,
 ) -> Result<Vec<v3mc::LodMesh>, Box<dyn Error>> {
     let submesh_nodes = get_submesh_nodes(doc);
-    let mut lod_meshes = Vec::with_capacity(submesh_nodes.len());
-    if lod_meshes.is_empty() {
+    if submesh_nodes.is_empty() {
         eprintln!("Warning! Found no LOD groups");
     }
+    let mut lod_meshes = Vec::with_capacity(submesh_nodes.len());
     for n in &submesh_nodes {
         lod_meshes.push(convert_lod_mesh(n, ctx)?);
     }
