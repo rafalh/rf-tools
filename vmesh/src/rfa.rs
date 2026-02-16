@@ -38,8 +38,6 @@ impl File {
 
 #[derive(Debug, Default)]
 pub struct FileHeader {
-    pub magic: u32,
-    pub version: i32,
     pub pos_reduction: f32,
     pub rot_reduction: f32,
     pub start_time: i32,

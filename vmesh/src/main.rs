@@ -54,7 +54,7 @@ fn build_child_nodes_indices(doc: &gltf::Document) -> Vec<usize> {
     child_indices
 }
 
-fn get_submesh_nodes(doc: &gltf::Document) -> Vec<gltf::Node> {
+fn get_submesh_nodes(doc: &gltf::Document) -> Vec<gltf::Node<'_>> {
     let child_indices = build_child_nodes_indices(doc);
     doc.nodes()
         .filter(|n| n.mesh().is_some() && !child_indices.contains(&n.index()))
